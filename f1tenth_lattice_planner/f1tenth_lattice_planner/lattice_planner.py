@@ -69,6 +69,8 @@ class LatticePlanner(Planner):
     lut_k = lut['kappa']
     lut = lut['lut']
 
+    tracker = PurePursuitPlanner()
+
     def __init__(self, conf):
         super().__init__(conf)
 
