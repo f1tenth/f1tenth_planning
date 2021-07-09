@@ -35,9 +35,9 @@ class Planner:
     Init Args:
         conf (dict): dictionary containing parameters for planners
     """
+
     def __init__(self, conf):
         self.conf = Namespace(**conf)
-        pass
 
     def plan(self, args):
         """
@@ -76,4 +76,7 @@ class TrackingPlanner(Planner):
         Args:
             waypoints (numpy.ndarray (n, m)): first dimension is number of points, second dimension depends on the specific planner
         """
-        self.waypoints = waypoints
+        try:
+            self.waypoints = waypoints
+        except AttributeError:
+            raise NotImplementedError('Waypoints not set for planner.')

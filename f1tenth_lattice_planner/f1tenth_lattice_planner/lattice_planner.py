@@ -88,6 +88,11 @@ class LatticePlanner(Planner):
             grid (numpy.ndarray (N x 4)): indices in the LUT for the grid end points
                  each columns is index for: x, y, theta, kappa 
         """
+        
+        # TODO: find current look ahead point on track as center point of grid
+
+        # TODO: create grid around center point within track limits
+
         pass
 
     def _evaluate_costs(self, trajectories):
