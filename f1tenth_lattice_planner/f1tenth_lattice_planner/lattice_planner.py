@@ -31,6 +31,7 @@ from f1tenth_pure_pursuit.pure_pursuit import PurePursuitPlanner
 from f1tenth_planner_base.utils import nearest_point
 from f1tenth_planner_base.utils import intersect_point
 from f1tenth_planner_base.utils import quat_2_rpy
+from f1tenth_lattice_planner.lattice_planner_utils import *
 
 ROS2_PRESENT = True
 try:
@@ -60,6 +61,13 @@ class LatticePlanner(Planner):
             1. grid center look ahead, 2. grid width, 3. grid length
             resolution of the grid matches the resolution in the LUT
           also some parameter TBD for velocity control
+
+    Workflow:
+        1. generate grid based on pose and grid params
+        2. look up and generate splines
+        3. reject splines that intersect with lidar obs with inflation
+        4. cost calc for each spline
+        5. selection and actuation
     """
 
     # class variables
