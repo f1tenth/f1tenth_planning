@@ -35,24 +35,6 @@ import numpy as np
 from numba import njit
 
 # Constants
-# max/min curvature (rad)
-KMAX = 30.0
-KMIN = -30.0
-# max/min curvature rate (rad/sec)
-DKMAX = 30.0
-DKMIN = -30.0
-# max/min accel/decel (m/s^2)
-DVMAX = 2.000
-DVMIN = -6.000
-# speed control logic a coeff
-ASCL = 0.1681
-# speed control logic b coeff
-BSCL = -0.0049
-# speed control logic threshold (m/s)
-VSCL = 4.0
-# speed control logic safety factor
-SF = 1.000
-DT = 0.0001
 # steps in a single spline
 NUM_STEPS = 100
 
@@ -292,3 +274,53 @@ def grid_lookup(grid, theta, kappa0, lut_x, lut_y, lut_theta, lut_kappa, lut, lu
     grid_filtered = grid[idx]
     states_list_local = integrate_all(params_list)
     return states_list_local, params_list, grid_filtered
+
+
+@njit(cache=True)
+def trans_traj_list(traj_list, trans, rot):
+    """
+    Transform splines into global frame
+
+    Args:
+        traj_list (numpy.ndarray (NxNUM_STEP, 4)): list of splines to be transformed
+        trans (numpy.ndarray ()): translation vector
+        rot (numpy.ndarray ()): rotation matrix
+    Returns:
+        new_traj_list (numpy.ndarray (NxNUM_STEP, 4)): list of splines in global frame
+    """
+    # input traj_list is N*N_samples X 4 ndarray
+    # xy_list = np.ascontiguousarray(traj_list[:, 0:2].T)
+    xy_list = traj_list[:, 0:2].T
+    rot = np.ascontiguousarray(rot)
+    trans = np.ascontiguousarray(trans)
+    # get homogeneous coords
+    homo_xy = np.ascontiguousarray(np.vstack((xy_list, np.zeros((1, traj_list.shape[0])), np.ones((1, traj_list.shape[0])))))
+    # apply rotation
+    rotated_xy = np.dot(rot, homo_xy)
+    rotated_xy = rotated_xy / rotated_xy[3, :]
+    # apply translation
+    translated_xy = rotated_xy[0:3, :] + trans
+    new_traj_list = np.zeros(traj_list.shape)
+    new_traj_list[:, 0:2] = translated_xy[0:2, :].T
+    new_traj_list[:, 2:4] = traj_list[:, 2:4]
+    return new_traj_list
+
+
+@njit(cache=True)
+def trans_traj_list_multiple(traj_list_all, trans, rot):
+    """
+    Transform a list of splines into global frame
+
+    Args:
+        traj_list_all (?): list of trajectory
+        trans (numpy.ndarray ()): translation vector
+        rot (numpy.ndarray ()): rotation matrix
+    """
+    out = []
+    for traj_list in traj_list_all:
+        # if it's one of the guys with no traj
+        if traj_list.shape == (1, 1):
+            out.append(traj_list)
+        else:
+            out.append(trans_traj_list(traj_list, trans, rot))
+    return out
