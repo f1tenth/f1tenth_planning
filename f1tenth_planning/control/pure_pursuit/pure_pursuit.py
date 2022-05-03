@@ -51,7 +51,7 @@ class PurePursuitPlanner():
         self.max_reacquire = 20.
         self.waypoints = waypoints
 
-    def _get_current_waypoint(self, lookahead_distance, position, theta):
+    def _get_current_waypoint(self, lookahead_distance, position, theta, waypoints):
         """
         Finds the current waypoint on the look ahead circle intersection
 
@@ -65,6 +65,7 @@ class PurePursuitPlanner():
         """
         wpts = np.vstack((self.waypoints[:, self.conf.wpt_xind],
                           self.waypoints[:, self.conf.wpt_yind])).T
+
         nearest_p, nearest_dist, t, i = nearest_point(position, wpts)
         if nearest_dist < lookahead_distance:
             lookahead_point, i2, t2 = intersect_point(position,

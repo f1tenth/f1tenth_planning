@@ -35,8 +35,8 @@ class StanleyPlanner():
     - Autonomous Automobile Path Tracking: https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
     """
 
-    def __init__(self, conf, wb):
-        super().__init__(conf, wb)
+    def __init__(self, wb, waypoints=None):
+        self.wb = wb
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
