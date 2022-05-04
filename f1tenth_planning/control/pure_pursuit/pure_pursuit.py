@@ -42,11 +42,11 @@ class PurePursuitPlanner():
     All vehicle pose used by the planner should be in the map frame.
 
     Args:
-        waypoints (numpy.ndarray [N x 3], optional): static waypoints to track
+        waypoints (numpy.ndarray [N x 4], optional): static waypoints to track
 
     Attributes:
         max_reacquire (float): maximum radius (meters) for reacquiring current waypoints
-        waypoints (numpy.ndarray [N x 3]): static list of waypoints, columns are [x, y, velocity]
+        waypoints (numpy.ndarray [N x 4]): static list of waypoints, columns are [x, y, velocity, heading]
     """
     def __init__(self, wheelbase=0.33, waypoints=None):
         self.max_reacquire = 20.
@@ -91,15 +91,15 @@ class PurePursuitPlanner():
             pose_y (float): current vehicle y position
             pose_theta (float): current vehicle heading angle
             lookahead_distance (float): lookahead distance to find next waypoint to track
-            waypoints (numpy.ndarray [N x 3], optional): list of dynamic waypoints to track, columns are [x, y, velocity]
+            waypoints (numpy.ndarray [N x 4], optional): list of dynamic waypoints to track, columns are [x, y, velocity, heading]
 
         Returns:
             speed (float): commanded vehicle longitudinal velocity
             steering_angle (float):  commanded vehicle steering angle
         """
         if waypoints is not None:
-            if waypoints.shape[1] != 3 or len(waypoints.shape) != 2:
-                raise ValueError('Waypoints needs to be a (Nx3) numpy array!')
+            if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
+                raise ValueError('Waypoints needs to be a (Nxm), m >= 3, numpy array!')
             self.waypoints = waypoints
 
         position = np.array([pose_x, pose_y])

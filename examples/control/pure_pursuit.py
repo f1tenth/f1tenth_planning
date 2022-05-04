@@ -34,16 +34,17 @@ from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanne
 
 def main():
     """
-    Pure Pursuit example
+    Pure Pursuit example. This example uses fixed waypoints throughout the 2 laps.
+    For an example using dynamic waypoints, see the lane switcher example.
     """
 
     # loading waypoints
-    waypoints = np.loadtxt('./example_waypoints.csv', delimiter=';', skiprows=0)
+    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=0)
     planner = PurePursuitPlanner(waypoints=waypoints)
 
     # create environment
-    env = gym.make('f110_gym:f110-v0', map='./example_map', map_ext='.png', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[1.07, -0.15, 1.37]]))
+    env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=1)
+    obs, _, done, _ = env.reset(np.array([[0.0, -0.84, 3.40]]))
 
     laptime = 0.0
     while not done:

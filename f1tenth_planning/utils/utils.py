@@ -267,3 +267,17 @@ def quat_2_rpy(x, y, z, w):
     t4 = 1. - 2. * (y * y + z * z)
     yaw = math.atan2(t3, t4)
     return roll, pitch, yaw
+
+@njit(fastmath=False, cache=True)
+def get_rotation_matrix(theta):
+    c, s = np.cos(theta), np.sin(theta)
+    return np.array([[c, -s], [s, c]])
+
+@njit(fastmath=False, cache=True)
+def pi_2_pi(angle):
+    if angle > math.pi:
+        return angle - 2.0 * math.pi
+    if angle < -math.pi:
+        return angle + 2.0 * math.pi
+
+    return angle

@@ -27,16 +27,29 @@ Author: Hongrui Zheng, Johannes Betz
 Last Modified: 5/1/22
 """
 
+from f1tenth_planning.utils.utils import nearest_point
+from f1tenth_planning.utils.utils import intersect_point
+from f1tenth_planning.utils.utils import pi_2_pi
+
+import numpy as np
+import math
+
 class StanleyPlanner():
     """
     This is the class for the Front Weeel Feedback Controller (Stanley) for tracking the path of the vehicle
     References:
     - Stanley: The robot that won the DARPA grand challenge: http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
     - Autonomous Automobile Path Tracking: https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
+
+    Args:
+        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
+        waypoints (numpy.ndarray [Nx4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
+
     """
 
-    def __init__(self, wb, waypoints=None):
-        self.wb = wb
+    def __init__(self, wheelbase=0.33, waypoints=None):
+        self.wheelbase = wheelbase
+        self.waypoints = waypoints
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
@@ -52,8 +65,7 @@ class StanleyPlanner():
         position_front_axle = np.array([fx, fy])
 
         # Find target index for the correct waypoint by finding the index with the lowest distance value/hypothenuses
-        wpts = np.vstack((self.waypoints[:, self.conf.wpt_xind], self.waypoints[:, self.conf.wpt_yind])).T
-        nearest_point_front, nearest_dist, t, target_index = planner_utils.nearest_point_on_trajectory_py2(position_front_axle, wpts)
+        nearest_point_front, nearest_dist, t, target_index = nearest_point(position_front_axle, self.waypoints[:, 0:2])
 
         # Calculate the Distances from the front axle to all the waypoints
         distance_nearest_point_x= fx - nearest_point_front[0]
@@ -73,13 +85,13 @@ class StanleyPlanner():
         #############  Calculate the heading error theta_e  normalized to an angle to [-pi, pi]     ##########
         # Extract heading on the raceline
         # BE CAREFUL: If your raceline is based on a different coordinate system you need to -+ pi/2 = 90 degrees
-        theta_raceline = waypoints[target_index][self.conf.wpt_thind]
+        theta_raceline = waypoints[target_index, 3]
 
         # Calculate the heading error by taking the difference between current and goal + Normalize the angles
-        theta_e = planner_utils.pi_2_pi(theta_raceline - vehicle_state[2])
+        theta_e = pi_2_pi(theta_raceline - vehicle_state[2])
 
         # Calculate the target Veloctiy for the desired state
-        goal_veloctiy = waypoints[target_index][self.conf.wpt_vind]
+        goal_veloctiy = waypoints[target_index, 2]
 
         return theta_e, ef, target_index, goal_veloctiy
 
@@ -104,11 +116,18 @@ class StanleyPlanner():
 
         return delta, goal_veloctiy
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity, k_path):
+    def plan(self, pose_x, pose_y, pose_theta, velocity, k_path=5., waypoints=None):
+        """
+
+        """
+        if waypoints is not None:
+            if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
+                raise ValueError('Waypoints needs to be a (Nxm), m >= 4, numpy array!')
+            self.waypoints = waypoints
         #Define a numpy array that includes the current vehicle state: x,y, theta, veloctiy
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
 
         #Calculate the steering angle and the speed in the controller
         steering_angle, speed = self.controller(vehicle_state, self.waypoints, k_path)
 
-        return speed, steering_angle
+        return steering_angle, speed
