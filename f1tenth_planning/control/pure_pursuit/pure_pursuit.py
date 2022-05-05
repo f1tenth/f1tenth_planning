@@ -101,7 +101,9 @@ class PurePursuitPlanner():
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
                 raise ValueError('Waypoints needs to be a (Nxm), m >= 3, numpy array!')
             self.waypoints = waypoints
-
+        else:
+            if self.waypoints is None:
+                raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
         position = np.array([pose_x, pose_y])
         lookahead_point = self._get_current_waypoint(lookahead_distance,
                                                      position,
