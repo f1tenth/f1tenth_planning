@@ -34,7 +34,8 @@ from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 def main():
     """
-    Pure Pursuit example
+    Stanley example. This example uses fixed waypoints throughout the 2 laps.
+    For an example using dynamic waypoints, see the lane switcher example.
     """
 
     # loading waypoints

@@ -43,8 +43,11 @@ class StanleyPlanner():
 
     Args:
         wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [Nx4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
+        waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
 
+    Attributes:
+        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
+        waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
     """
 
     def __init__(self, wheelbase=0.33, waypoints=None):
@@ -56,7 +59,7 @@ class StanleyPlanner():
         Calculate the heading and cross-track errors
         Args:
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
-            waypoints (numpy.ndarray [N, 4]): waypoints to track
+            waypoints (numpy.ndarray [N, 4]): waypoints to track [x, y, velocity, heading]
         """
 
         # distance to the closest point to the front axle center
@@ -91,6 +94,13 @@ class StanleyPlanner():
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
             waypoints (numpy.ndarray [N, 4]): waypoints to track
             k_path (float): proportional gain
+
+        Returns:
+            theta_e (float): heading error
+            ef (numpy.ndarray [2, ]): crosstrack error
+            theta_raceline (float): target heading
+            kappa_ref (float): target curvature
+            goal_veloctiy (float): target velocity
         """
 
         theta_e, ef, target_index, goal_veloctiy = self.calc_theta_and_ef(vehicle_state, waypoints)
@@ -112,6 +122,10 @@ class StanleyPlanner():
             velocity (float):
             k_path (float, optional, default=5):
             waypoints (numpy.ndarray [N x 4], optional, default=None):
+
+        Returns:
+            steering_angle (float): desired steering angle
+            speed (float): desired speed
         """
         if waypoints is not None:
             if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
