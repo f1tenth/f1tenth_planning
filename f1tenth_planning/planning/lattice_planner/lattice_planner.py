@@ -21,17 +21,18 @@
 # SOFTWARE.
 
 """
-Lane Switcher Planner
+Lattice Planner
 
 Author: Hongrui Zheng
 Last Modified: 5/5/22
 """
 
-from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
+from f1tenth_planning.utils.utils import nearest_point
 
+from pyclothoids import Clothoid
 import numpy as np
 
-class LaneSwitcherPlanner():
+class LatticePlanner():
     """
 
     """
@@ -41,7 +42,6 @@ class LaneSwitcherPlanner():
         """
         self.wheelbase = wheelbase
         self.waypoints = waypoints
-        self.tracker = PurePursuitPlanner(wheelbase)
 
     def add_cost_function(self, func):
         """

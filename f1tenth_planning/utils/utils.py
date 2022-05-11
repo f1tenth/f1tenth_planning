@@ -66,7 +66,7 @@ def nearest_point(point, trajectory):
     min_dist_segment = np.argmin(dists)
     return projections[min_dist_segment], dists[min_dist_segment], t[min_dist_segment], min_dist_segment
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def intersect_point(point, radius, trajectory, t=0.0, wrap=False):
     """
     starts at beginning of trajectory, and find the first point one radius away from the given point along the trajectory.
@@ -150,7 +150,7 @@ def intersect_point(point, radius, trajectory, t=0.0, wrap=False):
 
     return first_p, first_i, first_t
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def get_actuation(pose_theta, lookahead_point, position, lookahead_distance, wheelbase):
     waypoint_y = np.dot(np.array([np.sin(-pose_theta), np.cos(-pose_theta)]), lookahead_point[0:2]-position)
     speed = lookahead_point[2]
@@ -164,7 +164,7 @@ def get_actuation(pose_theta, lookahead_point, position, lookahead_distance, whe
 LQR utilities
 """
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def solve_lqr(A, B, Q, R, tolerance, max_num_iteration):
     """
     Iteratively calculating feedback matrix K
@@ -204,7 +204,7 @@ def solve_lqr(A, B, Q, R, tolerance, max_num_iteration):
 
     return K
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def update_matrix(vehicle_state, state_size, timestep, wheelbase):
     """
     calc A and b matrices of linearized, discrete system.
@@ -243,7 +243,7 @@ def update_matrix(vehicle_state, state_size, timestep, wheelbase):
 Geometry utilities
 """
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def quat_2_rpy(x, y, z, w):
     """
     Converts a quaternion into euler angles (roll, pitch, yaw)
@@ -268,12 +268,12 @@ def quat_2_rpy(x, y, z, w):
     yaw = math.atan2(t3, t4)
     return roll, pitch, yaw
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def get_rotation_matrix(theta):
     c, s = np.cos(theta), np.sin(theta)
     return np.array([[c, -s], [s, c]])
 
-@njit(fastmath=False, cache=True)
+@njit(cache=True)
 def pi_2_pi(angle):
     if angle > math.pi:
         return angle - 2.0 * math.pi
@@ -281,3 +281,15 @@ def pi_2_pi(angle):
         return angle + 2.0 * math.pi
 
     return angle
+
+# @njit(cache=True)
+def sample_traj(clothoid, npts):
+    traj = np.empty((npts, 4))
+    for i in range(0, npts):
+        s = i* (clothoid.length / max(npts - 1, 1))
+        traj[i, 0] = clothoid.X(s)
+        traj[i, 1] = clothoid.Y(s)
+        traj[i, 2] = clothoid.Theta(s)
+        traj[i, 3] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
+
+    return traj
