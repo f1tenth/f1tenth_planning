@@ -28,6 +28,7 @@ Last Modified: 5/5/22
 """
 
 from f1tenth_planning.utils.utils import nearest_point
+from f1tenth_planning.utils.utils import sample_lookahead_square
 
 from pyclothoids import Clothoid
 import numpy as np
@@ -43,6 +44,8 @@ class LatticePlanner():
         self.wheelbase = wheelbase
         self.waypoints = waypoints
 
+        self.sample_func = None
+
     def add_cost_function(self, func):
         """
         Add cost function to list for eval
@@ -52,14 +55,42 @@ class LatticePlanner():
     def add_sample_function(self, func):
         """
         Add a custom sample function to create goal grid
-        """
-        pass
+        
+        Specification of a candidate sample function:
+            Args:
+                pose_x (float):
+                pose_y (float):
+                pose_theta (float):
+                velocity (float):
+                waypoints (numpy.ndarray [N, 5]):
 
-    def sample(self):
+            Returns:
+                goal_grid (numpy.ndarray [N, 3]):
+
+        Args:
+            func (function): function that takes in the current observation and provide sampled goal states
+
+        Returns:
+            None
+        """
+        self.sample_func = func
+
+    def sample(self, pose_x, pose_y, pose_theta, velocity, waypoints):
         """
         Sample a goal grid based on sample function. Given the current vehicle state, return a list of [x, y, theta] tuples
+        
+        Args:
+            None
+
+        Returns:
+            goal_grid (numpy.ndarray [N, 3]): list of goal states, columns are [x, y, theta]
         """
-        pass
+        if self.sample_func is None:
+            raise NotImplementedError('Please set a sample function before sampling.')
+
+        goal_grid = self.sample_func(pose_x, pose_y, pose_theta, velocity, waypoints)
+
+        return goal_grid
 
     def eval(self):
         """
@@ -84,6 +115,7 @@ class LatticePlanner():
             selected_traj (numpy.ndarray [M, ])
         """
         # sample a grid based on current states
+        pass
 
 
 

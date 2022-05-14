@@ -293,3 +293,28 @@ def sample_traj(clothoid, npts):
         traj[i, 3] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
 
     return traj
+
+def sample_lookahead_square(pose_x,
+                            pose_y,
+                            pose_theta,
+                            velocity,
+                            waypoints,
+                            lookahead_distances=[0.4, 0.6, 0.8, 1.0],
+                            widths=np.linspace(-1.0, 1.0, num=7)):
+    """
+
+    """
+    # get lookahead points to create grid along waypoints
+    position = np.array([pose_x, pose_y])
+    nearest_p, nearest_dist, t, i = nearest_point(position, waypoints[:, 0:2])
+    lh_centers = []
+    for i, d in enumerate(lookahead_distances):
+        lh_pt, i2, t2 = intersect_point(position, d, waypoints[:, 0:2], i + t, wrap=True)
+        lh_centers[i] = waypoints[i2, [0, 1, 3]]
+    lh_centers = np.array(lh_centers)
+    grid = np.repeat(lh_centers, len(widths), axis=0)
+    widths_rep = np.repeat(widths[:, None], lh_centers.shape[0], axis=0)
+    # deviate points from center
+    grid[:, 1] += widths_rep[:, 0]
+    # rotate grid
+    
