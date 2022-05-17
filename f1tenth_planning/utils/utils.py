@@ -308,13 +308,14 @@ def sample_lookahead_square(pose_x,
     position = np.array([pose_x, pose_y])
     nearest_p, nearest_dist, t, i = nearest_point(position, waypoints[:, 0:2])
     lh_centers = []
+    lh_centers_theta = []
     for i, d in enumerate(lookahead_distances):
         lh_pt, i2, t2 = intersect_point(position, d, waypoints[:, 0:2], i + t, wrap=True)
         lh_centers[i] = waypoints[i2, [0, 1, 3]]
+        lh_centers_theta[i] =
     lh_centers = np.array(lh_centers)
     grid = np.repeat(lh_centers, len(widths), axis=0)
     widths_rep = np.repeat(widths[:, None], lh_centers.shape[0], axis=0)
     # deviate points from center
     grid[:, 1] += widths_rep[:, 0]
     # rotate grid
-    
