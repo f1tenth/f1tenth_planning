@@ -271,7 +271,7 @@ def quat_2_rpy(x, y, z, w):
 @njit(cache=True)
 def get_rotation_matrix(theta):
     c, s = np.cos(theta), np.sin(theta)
-    return np.array([[c, -s], [s, c]])
+    return np.ascontiguousarray(np.array([[c, -s], [s, c]]))
 
 @njit(cache=True)
 def pi_2_pi(angle):
@@ -294,26 +294,41 @@ def sample_traj(clothoid, npts):
 
     return traj
 
-def sample_lookahead_square(pose_x,
-                            pose_y,
-                            pose_theta,
-                            velocity,
-                            waypoints,
-                            lookahead_distances=[0.4, 0.6, 0.8, 1.0],
-                            widths=np.linspace(-1.0, 1.0, num=7)):
-    """
+# def sample_lookahead_square(pose_x,
+#                             pose_y,
+#                             pose_theta,
+#                             velocity,
+#                             waypoints,
+#                             lookahead_distances=[0.4, 0.6, 0.8, 1.0],
+#                             widths=np.linspace(-1.0, 1.0, num=7)):
+#     """
+#     Example function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
 
-    """
-    # get lookahead points to create grid along waypoints
-    position = np.array([pose_x, pose_y])
-    nearest_p, nearest_dist, t, i = nearest_point(position, waypoints[:, 0:2])
-    lh_centers = []
-    for i, d in enumerate(lookahead_distances):
-        lh_pt, i2, t2 = intersect_point(position, d, waypoints[:, 0:2], i + t, wrap=True)
-        lh_centers[i] = waypoints[i2, [0, 1, 3]]
-    lh_centers = np.array(lh_centers)
-    grid = np.repeat(lh_centers, len(widths), axis=0)
-    widths_rep = np.repeat(widths[:, None], lh_centers.shape[0], axis=0)
-    # deviate points from center
-    grid[:, 1] += widths_rep[:, 0]
-    # rotate grid
+#     Args:
+#         pose_x ():
+#         pose_y ():
+#         pose_theta ():
+#         velocity ():
+#         waypoints ():
+#         lookahead_distances ():
+#         widths ():
+    
+#     Returns:
+#         grid (): Returned grid of goal points
+#     """
+#     # get lookahead points to create grid along waypoints
+#     position = np.array([pose_x, pose_y])
+#     nearest_p, nearest_dist, t, i = nearest_point(position, waypoints[:, 0:2])
+#     lh_centers = []
+#     for i, d in enumerate(lookahead_distances):
+#         lh_pt, i2, t2 = intersect_point(position, d, waypoints[:, 0:2], i + t, wrap=True)
+#         lh_centers[i] = waypoints[i2, [0, 1, 3]]
+#     lh_centers = np.array(lh_centers)
+#     grid = np.repeat(lh_centers, len(widths), axis=0)
+#     widths_rep = np.repeat(widths[:, None], lh_centers.shape[0], axis=0)
+#     # deviate points from center
+#     grid[:, 1] += widths_rep[:, 0]
+#     # rotate grid
+#     rot = get_rotation_matrix(pose_theta)
+#     rotated_grid = np.dot(rot, grid)
+#     return rotated_grid
