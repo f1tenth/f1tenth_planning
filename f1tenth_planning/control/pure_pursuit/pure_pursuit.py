@@ -34,6 +34,7 @@ from f1tenth_planning.utils.utils import get_actuation
 import numpy as np
 import warnings
 
+
 class PurePursuitPlanner():
     """
     Pure pursuit tracking controller
@@ -48,39 +49,48 @@ class PurePursuitPlanner():
         max_reacquire (float): maximum radius (meters) for reacquiring current waypoints
         waypoints (numpy.ndarray [N x 4]): static list of waypoints, columns are [x, y, velocity, heading]
     """
-    def __init__(self, wheelbase=0.33, waypoints=None):
+    def __init__(self, conf, wheelbase=0.33, waypoints=None):
         self.max_reacquire = 20.
         self.wheelbase = wheelbase
         self.waypoints = waypoints
+        self.conf = conf
 
-    def _get_current_waypoint(self, lookahead_distance, position, theta):
+    def _get_current_waypoint(self, waypoints, lookahead_distance, position, theta):
         """
-        Finds the current waypoint on the look ahead circle intersection
-
-        Args:
-            lookahead_distance (float): lookahead distance to find next point to track
-            position (numpy.ndarray (2, )): current position of the vehicle (x, y)
-            theta (float): current vehicle heading
-
-        Returns:
-            current_waypoint (numpy.ndarray (3, )): selected waypoint (x, y, velocity), None if no point is found
+        gets the current waypoint to follow
         """
-
-        nearest_p, nearest_dist, t, i = nearest_point(position, self.waypoints[:, 0:2])
+        # TODO: tmp fix, without conf
+        # wpts = np.vstack((waypoints[:, self.conf.wpt_xind], waypoints[:, self.conf.wpt_yind])).T
+        wpts = np.vstack((waypoints[:, 0], waypoints[:, 1])).T
+        nearest_p, nearest_dist, t, i = nearest_point(position, wpts)
         if nearest_dist < lookahead_distance:
-            lookahead_point, i2, t2 = intersect_point(position,
-                                                      lookahead_distance,
-                                                      self.waypoints[:, 0:2],
-                                                      i + t,
-                                                      wrap=True)
-            if i2 is None:
+            lookahead_point, i2, t2 = intersect_point(position, lookahead_distance, wpts,
+                                                                                    i + t, wrap=True)
+            if i2 == None:
                 return None
-            current_waypoint = np.array([self.waypoints[i2, 0], self.waypoints[i2, 1], self.waypoints[i, 2]])
+            current_waypoint = np.empty((3,))
+            # x, y
+            current_waypoint[0:2] = wpts[i2, :]
+            # speed
+            current_waypoint[2] = waypoints[i, self.conf.wpt_vind]
             return current_waypoint
         elif nearest_dist < self.max_reacquire:
-            return self.waypoints[i, :]
+            return np.append(wpts[i, :], waypoints[i, self.conf.wpt_vind])
         else:
             return None
+
+    def track(self, pose_x, pose_y, pose_theta, lookahead_distance, waypoints, vgain):
+        position = np.array([pose_x, pose_y])
+        lookahead_point = self._get_current_waypoint(waypoints, lookahead_distance, position, pose_theta)
+        if lookahead_point is None:
+            return 4.0, 0.0
+        # print(lookahead_point)
+        speed, steering_angle = get_actuation(pose_theta, lookahead_point, position, lookahead_distance, self.wheelbase)
+        # if steering_angle < 0:
+        #     import ipdb; ipdb.set_trace()
+        speed = vgain * speed
+
+        return steering_angle, speed
 
     def plan(self, pose_x, pose_y, pose_theta, lookahead_distance, waypoints=None):
         """
