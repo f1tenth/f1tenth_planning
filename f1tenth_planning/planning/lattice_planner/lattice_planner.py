@@ -24,47 +24,40 @@
 Lattice Planner
 
 Author: Hongrui Zheng
-Last Modified: 5/5/22
+Last Modified: 6/13/22
 """
 
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_rotation_matrix
 from f1tenth_planning.utils.utils import sample_traj
+from f1tenth_planning.utils.utils import zero_2_2pi
+from f1tenth_planning.utils.utils import pi_2_pi
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
 
 from pyclothoids import Clothoid
 import numpy as np
 from numba import njit
-import csv
-
 
 class LatticePlanner():
     """
 
     """
-    def __init__(self, conf, wheelbase=0.33):
+    def __init__(self, wheelbase=0.33, waypoints=None, **kwargs):
         """
 
         """
         self.wheelbase = wheelbase
-        self.waypoints = None
-        self.load_waypoints(conf)
+        self.waypoints = waypoints
 
-        self.sample_func = sample_lookahead_square
-        self.cost_funcs = [get_length_cost]
+        self.sample_func = None
+        self.cost_funcs = []
         self.selection_func = None
 
-        self.tracker = PurePursuitPlanner(conf)
-
-        self.goal_grid = None
         self.best_traj = None
+        self.goal_grid = None
 
-    def load_waypoints(self, conf):
-        """
-        loads waypoints
-        """
-        self.waypoints = np.loadtxt(conf.wpt_path, delimiter=conf.wpt_delim, skiprows=conf.wpt_rowskip)
+        self.tracker = PurePursuitPlanner()
 
     def add_cost_function(self, func):
         """
@@ -139,7 +132,7 @@ class LatticePlanner():
 
         return goal_grid
 
-    def eval(self, all_traj, cost_weights=None, cur_pose=None):
+    def eval(self, all_traj, all_traj_clothoid, cost_weights=None, cur_pose=None):
         """
         Evaluate a list of generated clothoids based on added cost functions
         
@@ -150,9 +143,8 @@ class LatticePlanner():
         Returns:
             costs
         """
-        # TODO: change cost_weights
-        if not cost_weights:
-            cost_weights = [1/len(self.cost_funcs)] * len(self.cost_funcs)
+        if cost_weights is None:
+            cost_weights = np.array([1/len(self.cost_funcs)] * len(self.cost_funcs))
         if len(self.cost_funcs) == 0:
             raise NotImplementedError('Please set cost functions before evaluating.')
         if len(self.cost_funcs) != len(cost_weights):
@@ -162,11 +154,12 @@ class LatticePlanner():
 
         all_costs = []
         # loop through all trajectories
-        for traj in all_traj:
+        # TODO: this could be vectorized by grouping all traj
+        for traj, traj_clothoid in zip(all_traj, all_traj_clothoid):
             cost = 0.
             # loop through all cost functions
             for i, func in enumerate(self.cost_funcs):
-                cost += cost_weights[i] * func(traj, cur_pose)
+                cost += cost_weights[i] * func(traj, traj_clothoid, cur_pose)
             all_costs.append(cost)
         return all_costs
 
@@ -182,12 +175,11 @@ class LatticePlanner():
             idx ():
         """
         if self.selection_func is None:
-            best_idx = np.argmin(all_costs)
-        else:
-            best_idx = self.selection_func(all_costs)
+            self.selection_func = np.argmin
+        best_idx = self.selection_func(all_costs)
         return best_idx
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity=None, waypoints=None):
+    def plan(self, pose_x, pose_y, pose_theta, velocity, waypoints=None):
         """
         Plan for next step
 
@@ -203,42 +195,38 @@ class LatticePlanner():
             speed (float):
             selected_traj (numpy.ndarray [M, ])
         """
-        # sample a grid based on current states
-        if not waypoints:
+        if waypoints is None:
             waypoints = self.waypoints
-        cur_pose = np.array([pose_x, pose_y, pose_theta])
-        goal_grid = self.sample(pose_x, pose_y, pose_theta, velocity, waypoints)  # (lh_pts_num * wid_pts_num, 3)
-        self.goal_grid = goal_grid
+
+        # sample a grid based on current states
+        self.goal_grid = self.sample(pose_x, pose_y, pose_theta, velocity, waypoints)
+
         # generate clothoids
-        all_traj = []  # len: lh_pts_num * wid_pts_num, each of sampled number points
-        for point in goal_grid:
+        all_traj = []
+        all_traj_clothoid = []
+        for point in self.goal_grid:
             clothoid = Clothoid.G1Hermite(pose_x, pose_y, pose_theta, point[0], point[1], point[2])
-            # clothoid = Clothoid.G1Hermite(0., 0., pose_theta, point[0], point[1], point[2])
-            traj = sample_traj(clothoid, 20)
+            traj = sample_traj(clothoid, 20, point[3])
             all_traj.append(traj)
+            # G1Hermite parameters are [xstart, ystart, thetastart, curvrate, kappastart, arclength]
+            all_traj_clothoid.append(np.array(clothoid.Parameters))
 
         # evaluate all trajectory on all costs
-        all_costs = self.eval(np.array(all_traj), cur_pose=cur_pose)
+        cur_pose = np.array([pose_x, pose_y, pose_theta])
+        all_costs = self.eval(np.array(all_traj), np.array(all_traj_clothoid), cur_pose=cur_pose)
 
         # select best trajectory
         best_traj_idx = self.select(all_costs)
-        best_traj_idx = 17
-        best_traj = all_traj[best_traj_idx]  # (n, 4), n is the length of sampled traj
+        self.best_traj = all_traj[best_traj_idx]
 
-        traj_v = np.ones(best_traj.shape[0]).reshape(-1, 1) * 2
-        best_traj = np.hstack([best_traj, traj_v])
-        best_traj = np.hstack([best_traj, traj_v])
         # track best trajectory
-        steer, speed = self.tracker.track(pose_x,
+        steer, speed = self.tracker.plan(pose_x,
                                          pose_y,
                                          pose_theta,
-                                         0.5,
-                                         best_traj,
-                                         0.8)
-        # print(f'cur steer {steer}, cur speed{speed}')
-        # print(f'cur pose {pose_x}, {pose_y}')
-        self.best_traj = best_traj
-        return steer, speed, best_traj
+                                         0.3,
+                                         self.best_traj)
+
+        return steer, speed, self.best_traj
 
 """
 
@@ -252,10 +240,12 @@ def sample_lookahead_square(pose_x,
                             pose_theta,
                             velocity,
                             waypoints,
-                            lookahead_distances=[0.8, 1.1, 1.4, 1.7],
-                            widths=np.linspace(-1.0, 1.0, num=7)):
+                            lookahead_distances=[1.8, 2.1, 2.4, 2.7],
+                            widths=np.linspace(-1.3, 1.3, num=7)):
     """
     Example function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
+
+    TODO: specify waypoints idx somehow? as planner arguments?
 
     Args:
         pose_x ():
@@ -267,32 +257,28 @@ def sample_lookahead_square(pose_x,
         widths ():
     
     Returns:
-        grid (): Returned grid of goal points
+        grid (numpy.ndarray (n, 3)): Returned grid of goal points
     """
+    # get lookahead points to create grid along waypoints
     position = np.array([pose_x, pose_y])
-    nearest_p, nearest_dist, t, nearest_i = nearest_point(position, waypoints[:, 1:3])
-    local_span = np.vstack((widths, np.zeros_like(widths)))
+    nearest_p, nearest_dist, t, nearest_i = nearest_point(position, waypoints[:, 0:2])
+    local_span = np.vstack((np.zeros_like(widths), widths))
     xy_grid = np.zeros((2, 1))
     theta_grid = np.zeros((len(lookahead_distances), 1))
+    v_grid = np.zeros((len(lookahead_distances), 1))
     for i, d in enumerate(lookahead_distances):
-        lh_pt, i2, t2 = intersect_point(nearest_p, d, waypoints[:, 1:3], i + t + nearest_i, wrap=True)
+        lh_pt, i2, t2 = intersect_point(nearest_p, d, waypoints[:, 0:2], t + nearest_i, wrap=True)
         lh_pt_theta = waypoints[i2, 3]
+        lh_pt_v = waypoints[i2, 2]
         lh_span_points = get_rotation_matrix(lh_pt_theta) @ local_span + lh_pt.reshape(2, -1)
         xy_grid = np.hstack([xy_grid, lh_span_points])
-        theta_grid[i] = (lh_pt_theta + np.pi/2) % (2*np.pi)
+        theta_grid[i] = zero_2_2pi(lh_pt_theta)
+        v_grid[i] = lh_pt_v
     xy_grid = xy_grid[:, 1:]
     theta_grid = np.repeat(theta_grid, len(widths))
-
-    ##### to local axis #####
-    # R = get_rotation_matrix(-pose_theta)
-    # xy_grid_local = R @ (xy_grid - position.reshape(2, -1))
-    # theta_grid = np.repeat(theta_grid, len(widths))
-    # theta_grid = (theta_grid - pose_theta) % (2*np.pi)
-    # grid = np.vstack([xy_grid_local, theta_grid])
-    ##### to local axis #####
-
-    grid = np.vstack([xy_grid, theta_grid])
-    return grid.T  # (n, 3)
+    v_grid = np.repeat(v_grid, len(widths))
+    grid = np.vstack((xy_grid, theta_grid, v_grid)).T
+    return grid
 
 """
 
@@ -301,14 +287,9 @@ Example functions for different costs
 """
 
 @njit(cache=True)
-def get_length_cost(traj, cur_pose):
-    """
-    traj: (n, 4)
-    """
+def get_length_cost(traj, traj_clothoid, cur_pose):
     # not division by zero, grid lookup only returns s >= 0.
-    diff = (traj[:, :2] - cur_pose[:2]).T  # (2, n)
-    distance = diff[0] * diff[0] + diff[1] * diff[1]
-    return np.sum(distance)
+    return traj_clothoid[-1]
 
 @njit(cache=True)
 def get_max_curvature(traj_list, num_traj):

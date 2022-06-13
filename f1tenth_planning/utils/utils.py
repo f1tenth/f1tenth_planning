@@ -300,22 +300,36 @@ def pi_2_pi(angle):
 
     return angle
 
+@njit(cache=True)
+def zero_2_2pi(angle):
+    if angle > 2*math.pi:
+        return angle - 2.0 * math.pi
+    if angle < 0:
+        return angle + 2.0 * math.pi
+
+    return angle
 
 # @njit(cache=True)
-def sample_traj(clothoid, npts):
-    traj = np.empty((npts, 4))
+def sample_traj(clothoid, npts, v):
+    traj = np.empty((npts, 5))
     for i in range(0, npts):
         s = i * (clothoid.length / max(npts - 1, 1))
         traj[i, 0] = clothoid.X(s)
         traj[i, 1] = clothoid.Y(s)
-        traj[i, 2] = clothoid.Theta(s)
-        traj[i, 3] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
+        traj[i, 2] = v
+        traj[i, 3] = clothoid.Theta(s)
+        traj[i, 4] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
 
     return traj
 
 
-def map_collision(point, map):
+def map_collision(point, map, eps=0.1):
     """
     Returns whether a point is in collision with the map
+
+    Args:
+        point (numpy.ndarray (2, ))
+        map (numpy.ndarray (n, m))
+        eps (float, default=0.1)
     """
     pass
