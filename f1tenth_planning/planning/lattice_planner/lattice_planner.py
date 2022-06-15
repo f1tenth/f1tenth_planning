@@ -217,6 +217,7 @@ class LatticePlanner():
 
         # select best trajectory
         best_traj_idx = self.select(all_costs)
+        best_traj_idx = 17
         self.best_traj = all_traj[best_traj_idx]
 
         # track best trajectory
@@ -234,13 +235,13 @@ Example function for sampling a grid of goal points
 
 """
 
-# @njit(cache=True)
+@njit(cache=True)
 def sample_lookahead_square(pose_x,
                             pose_y,
                             pose_theta,
                             velocity,
                             waypoints,
-                            lookahead_distances=[1.8, 2.1, 2.4, 2.7],
+                            lookahead_distances=(1.8, 2.1, 2.4, 2.7),
                             widths=np.linspace(-1.3, 1.3, num=7)):
     """
     Example function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
@@ -268,15 +269,16 @@ def sample_lookahead_square(pose_x,
     v_grid = np.zeros((len(lookahead_distances), 1))
     for i, d in enumerate(lookahead_distances):
         lh_pt, i2, t2 = intersect_point(nearest_p, d, waypoints[:, 0:2], t + nearest_i, wrap=True)
+        i2 = int(i2)  # for numba, explicitly set the int type
         lh_pt_theta = waypoints[i2, 3]
         lh_pt_v = waypoints[i2, 2]
         lh_span_points = get_rotation_matrix(lh_pt_theta) @ local_span + lh_pt.reshape(2, -1)
-        xy_grid = np.hstack([xy_grid, lh_span_points])
+        xy_grid = np.hstack((xy_grid, lh_span_points))
         theta_grid[i] = zero_2_2pi(lh_pt_theta)
         v_grid[i] = lh_pt_v
     xy_grid = xy_grid[:, 1:]
-    theta_grid = np.repeat(theta_grid, len(widths))
-    v_grid = np.repeat(v_grid, len(widths))
+    theta_grid = np.repeat(theta_grid, len(widths)).reshape(1, -1)
+    v_grid = np.repeat(v_grid, len(widths)).reshape(1, -1)
     grid = np.vstack((xy_grid, theta_grid, v_grid)).T
     return grid
 
