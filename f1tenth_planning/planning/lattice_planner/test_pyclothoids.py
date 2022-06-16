@@ -1,6 +1,6 @@
 from pyclothoids import Clothoid
 from f1tenth_planning.utils.utils import sample_traj
-import cProfile
+# import cProfile
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -38,6 +38,7 @@ if __name__ == '__main__':
     # cProfile.run('test_cont()')
     # test()
     clothoid = Clothoid.G1Hermite(0, 0, 0, 1, 1, 0)
+    c = Clothoid.G1Hermite(0, 0, 0, 1, 1, 0)
     traj = sample_traj(clothoid, 100)
     x, y = clothoid.SampleXY(100)
     thetas = np.linspace(clothoid.ThetaStart, clothoid.ThetaEnd, 100)
