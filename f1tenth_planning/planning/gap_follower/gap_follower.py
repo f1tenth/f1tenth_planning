@@ -31,7 +31,7 @@ def pre_process_LiDAR(ranges, window_size, danger_thres, rb):
     return proc_ranges
 
 # @njit(fastmath=False, cache=True)
-def find_target_point(ranges, safe_thres, max_gap_length=350, min_gap_length=50):
+def find_target_point(ranges, safe_thres, max_gap_length=100, min_gap_length=50):
     """_summary_
         Find all the gaps exceed a safe thres.
         Among those qualified gaps, chose the one with a farmost point, calculate the target as the middle of the gap.
@@ -79,8 +79,8 @@ class Gap_follower:
         self.angle_min = -2.35
         self.max_speed = 6
 
-        self.safe_thres = 3.0
-        self.danger_thres = 1.2
+        self.safe_thres = 2.0
+        self.danger_thres = 0.8
         self.rb = 10
         self.P = 0.6
 

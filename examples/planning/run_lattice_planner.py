@@ -6,6 +6,10 @@ from f1tenth_planning.planning.lattice_planner.lattice_planner import LatticePla
 from f1tenth_planning.planning.lattice_planner.lattice_planner import sample_lookahead_square, get_length_cost
 from f1tenth_planning.planning.gap_follower.gap_follower import Gap_follower
 
+"""
+waypoints: [x, y, v, heading, kappa]
+"""
+
 from pyglet.gl import GL_POINTS
 
 
@@ -38,7 +42,7 @@ def main():
     draw_waypoints = []
 
     # create environment
-    num_agents = 1
+    num_agents = 2
     env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=num_agents)
     env.add_render_callback(render_callback)
     obs, _, done, _ = env.reset(random_position(num_agents))
@@ -47,6 +51,7 @@ def main():
     laptime = 0.0
     while not done:
         # ego
+        # steer, speed = gap_follower.plan(obs['scans'][0])
         steer, speed, best_traj = planner.plan(obs['poses_x'][0],
                                                obs['poses_y'][0],
                                                obs['poses_theta'][0],
@@ -55,8 +60,8 @@ def main():
         # oppo
         for i in range(1, num_agents):
             scan = obs['scans'][i]
-            steer, speed = gap_follower.plan(scan)
-            action = np.vstack((action, np.array([[steer, speed]])))
+            steer, _ = gap_follower.plan(scan)
+            action = np.vstack((action, np.array([[steer, speed/2]])))
         obs, timestep, done, _ = env.step(action)
         laptime += timestep
         env.render(mode='human_fast')
@@ -67,7 +72,7 @@ def random_position(sampled_number=1):
     global waypoints_xytheta
     ego_idx = random.sample(range(len(waypoints_xytheta)), 1)[0]
     for i in range(sampled_number):
-        starting_idx = ego_idx + i*2
+        starting_idx = (ego_idx + i*5) % len(waypoints_xytheta)
         x, y, theta = waypoints_xytheta[starting_idx][0],  waypoints_xytheta[starting_idx][1], waypoints_xytheta[starting_idx][2]
         if i==0:
             res = np.array([[x, y, theta]])  # (1, 3)
