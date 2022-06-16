@@ -172,7 +172,7 @@ class LatticePlanner():
 
         return goal_grid
 
-    def eval(self, all_traj, all_traj_clothoid, cost_weights=None):
+    def eval(self, all_traj, all_traj_clothoid, opp_poses, cost_weights=None):
         """
         Evaluate a list of generated clothoids based on added cost functions
         
@@ -200,9 +200,9 @@ class LatticePlanner():
             # loop through all cost functions
             for i, func in enumerate(self.cost_funcs):
                 if self.dt is None:
-                    cost += cost_weights[i] * func(traj, traj_clothoid)
+                    cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses)
                 else:
-                    cost += cost_weights[i] * func(traj, traj_clothoid, self.dt, self.map_metainfo)
+                    cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses, self.dt, self.map_metainfo)
             all_costs.append(cost)
         return all_costs
 
@@ -255,7 +255,7 @@ class LatticePlanner():
             all_traj_clothoid.append(np.array(clothoid.Parameters))
 
         # evaluate all trajectory on all costs
-        all_costs = self.eval(np.array(all_traj), np.array(all_traj_clothoid))
+        all_costs = self.eval(np.array(all_traj), np.array(all_traj_clothoid), opp_poses)
 
         # select best trajectory
         best_traj_idx = self.select(all_costs)
@@ -330,12 +330,12 @@ Example functions for different costs
 """
 
 @njit(cache=True)
-def get_length_cost(traj, traj_clothoid, dt=None, map_metainfo=None):
+def get_length_cost(traj, traj_clothoid, opp_poses, dt=None, map_metainfo=None):
     # not division by zero, grid lookup only returns s >= 0.
     return traj_clothoid[-1]
 
 @njit(cache=True)
-def get_map_collision(traj, traj_clothoid, dt=None, map_metainfo=None):
+def get_map_collision(traj, traj_clothoid, opp_poses, dt=None, map_metainfo=None):
     if dt is None:
         raise ValueError('Map Distance Transform dt has to be set when using this cost function.')
     collisions = map_collision(traj[:, 0:2], dt, map_metainfo)
