@@ -322,14 +322,57 @@ def sample_traj(clothoid, npts, v):
 
     return traj
 
-
-def map_collision(point, map, eps=0.1):
+@njit(cache=True)
+def xy_2_rc(x, y, orig_x, orig_y, orig_c, orig_s, height, width, resolution):
     """
-    Returns whether a point is in collision with the map
+    Translate (x, y) coordinate into (r, c) in the matrix
+        Args:
+            x (float): coordinate in x (m)
+            y (float): coordinate in y (m)
+            orig_x (float): x coordinate of the map origin (m)
+            orig_y (float): y coordinate of the map origin (m)
+        
+        Returns:
+            r (int): row number in the transform matrix of the given point
+            c (int): column number in the transform matrix of the given point
+    """
+    # translation
+    x_trans = x - orig_x
+    y_trans = y - orig_y
+
+    # rotation
+    x_rot = x_trans * orig_c + y_trans * orig_s
+    y_rot = -x_trans * orig_s + y_trans * orig_c
+
+    # clip the state to be a cell
+    if x_rot < 0 or x_rot >= width * resolution or y_rot < 0 or y_rot >= height * resolution:
+        c = -1
+        r = -1
+    else:
+        c = int(x_rot/resolution)
+        r = int(y_rot/resolution)
+
+    return r, c
+
+@njit(cache=True)
+def map_collision(points, dt, map_metainfo, eps=0.3):
+    """
+    Check wheter a point is in collision with the map
 
     Args:
-        point (numpy.ndarray (2, ))
-        map (numpy.ndarray (n, m))
-        eps (float, default=0.1)
+        points (numpy.ndarray(N, 2)): points to check
+        dt (numpy.ndarray(n, m)): the map distance transform
+        map_metainfo (tuple (x, y, c, s, h, w, resol)): map metainfo
+        eps (float, default=0.1): collision threshold
+    Returns:
+        collisions (numpy.ndarray (N, )): boolean vector of wheter input points are in collision
+
     """
-    pass
+    orig_x, orig_y, orig_c, orig_s, height, width, resolution = map_metainfo
+    collisions = np.empty((points.shape[0], ))
+    for i in range(points.shape[0]):
+        if dt[xy_2_rc(points[i, 0], points[i, 1], orig_x, orig_y, orig_c, orig_s, height, width, resolution)] <= eps:
+            collisions[i] = True
+        else:
+            collisions[i] = False
+    return collisions

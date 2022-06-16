@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from f1tenth_planning.planning.lattice_planner.lattice_planner import LatticePlanner
-from f1tenth_planning.planning.lattice_planner.lattice_planner import sample_lookahead_square, get_length_cost
+from f1tenth_planning.planning.lattice_planner.lattice_planner import sample_lookahead_square, get_length_cost, get_map_collision
 
 from pyglet.gl import GL_POINTS
 
@@ -18,9 +18,9 @@ def main():
 
     # loading waypoints
     waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=0)
-    planner = LatticePlanner(waypoints=waypoints)
+    planner = LatticePlanner(waypoints=waypoints, map_path='./Spielberg_map', map_ext='.png')
     planner.add_sample_function(sample_lookahead_square)
-    planner.add_cost_function(get_length_cost)
+    planner.add_cost_function([get_length_cost, get_map_collision])
 
     # rendering
     draw_grid_pts = []

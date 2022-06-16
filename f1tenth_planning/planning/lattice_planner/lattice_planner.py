@@ -33,6 +33,7 @@ from f1tenth_planning.utils.utils import get_rotation_matrix
 from f1tenth_planning.utils.utils import sample_traj
 from f1tenth_planning.utils.utils import zero_2_2pi
 from f1tenth_planning.utils.utils import pi_2_pi
+from f1tenth_planning.utils.utils import map_collision
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
 
 from pyclothoids import Clothoid
@@ -58,6 +59,45 @@ class LatticePlanner():
         self.goal_grid = None
 
         self.tracker = PurePursuitPlanner()
+
+        try:
+            self.map_path = kwargs['map_path']
+            try:
+                self.map_ext = kwargs['map_ext']
+            except:
+                raise ValueError('Map image extenstion must also be specified if using a map.')
+            
+            import os
+            from PIL import Image
+            import yaml
+            from scipy.ndimage import distance_transform_edt as edt
+            # load map image
+            map_img_path = os.path.splitext(self.map_path)[0] + self.map_ext
+            self.map_img = np.array(Image.open(map_img_path).transpose(Image.FLIP_TOP_BOTTOM)).astype(np.float64)
+            self.map_img[self.map_img <= 128.] = 0.
+            self.map_img[self.map_img > 128.] = 255.
+            self.map_height = self.map_img.shape[0]
+            self.map_width = self.map_img.shape[1]
+            # load map yaml
+            with open(self.map_path + '.yaml', 'r') as yaml_stream:
+                try:
+                    map_metadata = yaml.safe_load(yaml_stream)
+                    self.map_resolution = map_metadata['resolution']
+                    self.origin = map_metadata['origin']
+                except yaml.YAMLError as ex:
+                    print(ex)
+
+            self.orig_x = self.origin[0]
+            self.orig_y = self.origin[1]
+            self.orig_s = np.sin(self.origin[2])
+            self.orig_c = np.cos(self.origin[2])
+
+            self.dt = self.map_resolution * edt(self.map_img)
+            self.map_metainfo = (self.orig_x, self.orig_y, self.orig_c, self.orig_s, self.map_height, self.map_width, self.map_resolution)
+
+        except Exception as ex:
+            print(ex)
+            self.dt = None
 
     def add_cost_function(self, func):
         """
@@ -132,7 +172,7 @@ class LatticePlanner():
 
         return goal_grid
 
-    def eval(self, all_traj, all_traj_clothoid, cost_weights=None, cur_pose=None):
+    def eval(self, all_traj, all_traj_clothoid, cost_weights=None):
         """
         Evaluate a list of generated clothoids based on added cost functions
         
@@ -159,7 +199,10 @@ class LatticePlanner():
             cost = 0.
             # loop through all cost functions
             for i, func in enumerate(self.cost_funcs):
-                cost += cost_weights[i] * func(traj, traj_clothoid, cur_pose)
+                if self.dt is None:
+                    cost += cost_weights[i] * func(traj, traj_clothoid)
+                else:
+                    cost += cost_weights[i] * func(traj, traj_clothoid, self.dt, self.map_metainfo)
             all_costs.append(cost)
         return all_costs
 
@@ -179,7 +222,7 @@ class LatticePlanner():
         best_idx = self.selection_func(all_costs)
         return best_idx
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity, waypoints=None):
+    def plan(self, pose_x, pose_y, pose_theta, velocity, waypoints=None, opp_poses=None):
         """
         Plan for next step
 
@@ -212,8 +255,7 @@ class LatticePlanner():
             all_traj_clothoid.append(np.array(clothoid.Parameters))
 
         # evaluate all trajectory on all costs
-        cur_pose = np.array([pose_x, pose_y, pose_theta])
-        all_costs = self.eval(np.array(all_traj), np.array(all_traj_clothoid), cur_pose=cur_pose)
+        all_costs = self.eval(np.array(all_traj), np.array(all_traj_clothoid))
 
         # select best trajectory
         best_traj_idx = self.select(all_costs)
@@ -234,13 +276,13 @@ Example function for sampling a grid of goal points
 
 """
 
-# @njit(cache=True)
+@njit(cache=True)
 def sample_lookahead_square(pose_x,
                             pose_y,
                             pose_theta,
                             velocity,
                             waypoints,
-                            lookahead_distances=[1.8, 2.1, 2.4, 2.7],
+                            lookahead_distances=np.array([1.8, 2.1, 2.4, 2.7]),
                             widths=np.linspace(-1.3, 1.3, num=7)):
     """
     Example function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
@@ -268,15 +310,16 @@ def sample_lookahead_square(pose_x,
     v_grid = np.zeros((len(lookahead_distances), 1))
     for i, d in enumerate(lookahead_distances):
         lh_pt, i2, t2 = intersect_point(nearest_p, d, waypoints[:, 0:2], t + nearest_i, wrap=True)
+        i2 = int(i2)
         lh_pt_theta = waypoints[i2, 3]
         lh_pt_v = waypoints[i2, 2]
         lh_span_points = get_rotation_matrix(lh_pt_theta) @ local_span + lh_pt.reshape(2, -1)
-        xy_grid = np.hstack([xy_grid, lh_span_points])
+        xy_grid = np.hstack((xy_grid, lh_span_points))
         theta_grid[i] = zero_2_2pi(lh_pt_theta)
         v_grid[i] = lh_pt_v
     xy_grid = xy_grid[:, 1:]
-    theta_grid = np.repeat(theta_grid, len(widths))
-    v_grid = np.repeat(v_grid, len(widths))
+    theta_grid = np.repeat(theta_grid, len(widths)).reshape(1, -1)
+    v_grid = np.repeat(v_grid, len(widths)).reshape(1, -1)
     grid = np.vstack((xy_grid, theta_grid, v_grid)).T
     return grid
 
@@ -287,9 +330,19 @@ Example functions for different costs
 """
 
 @njit(cache=True)
-def get_length_cost(traj, traj_clothoid, cur_pose):
+def get_length_cost(traj, traj_clothoid, dt=None, map_metainfo=None):
     # not division by zero, grid lookup only returns s >= 0.
     return traj_clothoid[-1]
+
+@njit(cache=True)
+def get_map_collision(traj, traj_clothoid, dt=None, map_metainfo=None):
+    if dt is None:
+        raise ValueError('Map Distance Transform dt has to be set when using this cost function.')
+    collisions = map_collision(traj[:, 0:2], dt, map_metainfo)
+    if np.any(collisions):
+        return 100.
+    else:
+        return 0.
 
 @njit(cache=True)
 def get_max_curvature(traj_list, num_traj):
