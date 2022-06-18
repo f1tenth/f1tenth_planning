@@ -30,10 +30,19 @@ Last Modified: 5/27/21
 import numpy as np
 import math
 from numba import njit
+import random
 
 """
 Pure Pursuit utilities
 """
+
+# @njit(cache=True)
+def obsDict2oppoArray(obs):
+    oppo_num = len(obs['poses_x'])
+    res = np.empty((oppo_num, 3))
+    for i in range(1, oppo_num):
+        res[i] = np.array([obs['poses_x'][i], obs['poses_y'][i], obs['poses_theta'][i]])
+    return res
 
 
 @njit(cache=True)
@@ -282,6 +291,7 @@ def get_rotation_matrix(theta):
     c, s = np.cos(theta), np.sin(theta)
     return np.ascontiguousarray(np.array([[c, -s], [s, c]]))
 
+
 def rotate_along_point(p, origin, theta):
     """
     p: (n, 2)
@@ -289,7 +299,8 @@ def rotate_along_point(p, origin, theta):
     """
     rot = get_rotation_matrix(theta)
     origin = origin.reshape(-1, 2)
-    return origin.T + rot @ ((p-origin).T)
+    return origin.T + rot @ ((p - origin).T)
+
 
 @njit(cache=True)
 def pi_2_pi(angle):
@@ -300,14 +311,16 @@ def pi_2_pi(angle):
 
     return angle
 
+
 @njit(cache=True)
 def zero_2_2pi(angle):
-    if angle > 2*math.pi:
+    if angle > 2 * math.pi:
         return angle - 2.0 * math.pi
     if angle < 0:
         return angle + 2.0 * math.pi
 
     return angle
+
 
 # @njit(cache=True)
 def sample_traj(clothoid, npts, v):
@@ -321,6 +334,7 @@ def sample_traj(clothoid, npts, v):
         traj[i, 4] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
 
     return traj
+
 
 @njit(cache=True)
 def xy_2_rc(x, y, orig_x, orig_y, orig_c, orig_s, height, width, resolution):
@@ -349,10 +363,11 @@ def xy_2_rc(x, y, orig_x, orig_y, orig_c, orig_s, height, width, resolution):
         c = -1
         r = -1
     else:
-        c = int(x_rot/resolution)
-        r = int(y_rot/resolution)
+        c = int(x_rot / resolution)
+        r = int(y_rot / resolution)
 
     return r, c
+
 
 @njit(cache=True)
 def map_collision(points, dt, map_metainfo, eps=0.3):
@@ -369,10 +384,224 @@ def map_collision(points, dt, map_metainfo, eps=0.3):
 
     """
     orig_x, orig_y, orig_c, orig_s, height, width, resolution = map_metainfo
-    collisions = np.empty((points.shape[0], ))
+    collisions = np.empty((points.shape[0],))
     for i in range(points.shape[0]):
         if dt[xy_2_rc(points[i, 0], points[i, 1], orig_x, orig_y, orig_c, orig_s, height, width, resolution)] <= eps:
             collisions[i] = True
         else:
             collisions[i] = False
-    return collisions
+    return np.ascontiguousarray(collisions)
+
+@njit(cache=True)
+def x2y_distances_argmin(X, Y):
+    """
+    X: (n, 2)
+    Y: (m, 2)
+
+    return (n, 1)
+    """
+    # pass
+    n = len(X)
+    min_idx = np.zeros(n)
+    for i in range(n):
+        diff = Y - X[i]  # (m, 2)
+        # It is because numba does not support 'axis' keyword
+        norm2 = diff * diff  # (m, 2)
+        norm2 = norm2[:, 0] + norm2[:, 1]
+        min_idx[i] = np.argmin(norm2)
+    return min_idx
+
+@njit(cache=True)
+def get_trmtx(pose):
+    """
+    Get transformation matrix of vehicle frame -> global frame
+    Args:
+        pose (np.ndarray (3, )): current pose of the vehicle
+    return:
+        H (np.ndarray (4, 4)): transformation matrix
+    """
+    x = pose[0]
+    y = pose[1]
+    th = pose[2]
+    cos = np.cos(th)
+    sin = np.sin(th)
+    H = np.array([[cos, -sin, 0., x], [sin, cos, 0., y], [0., 0., 1., 0.], [0., 0., 0., 1.]])
+    return H
+
+
+@njit(cache=True)
+def get_vertices(pose, length, width):
+    """
+    Utility function to return vertices of the car body given pose and size
+    Args:
+        pose (np.ndarray, (3, )): current world coordinate pose of the vehicle
+        length (float): car length
+        width (float): car width
+    Returns:
+        vertices (np.ndarray, (4, 2)): corner vertices of the vehicle body
+    """
+    # H = get_trmtx(pose)
+    # rl = H.dot(np.asarray([[-length / 2], [width / 2], [0.], [1.]])).flatten()
+    # rr = H.dot(np.asarray([[-length / 2], [-width / 2], [0.], [1.]])).flatten()
+    # fl = H.dot(np.asarray([[length / 2], [width / 2], [0.], [1.]])).flatten()
+    # fr = H.dot(np.asarray([[length / 2], [-width / 2], [0.], [1.]])).flatten()
+    # rl = rl / rl[3]
+    # rr = rr / rr[3]
+    # fl = fl / fl[3]
+    # fr = fr / fr[3]
+    # vertices_1 = np.asarray([[rl[0], rl[1]], [rr[0], rr[1]], [fr[0], fr[1]], [fl[0], fl[1]]])
+
+    c = np.cos(pose[2])
+    s = np.sin(pose[2])
+    x, y = pose[0], pose[1]
+    tl_x = -length/2 * c + width/2 * (-s) + x
+    tl_y = -length / 2 * s + width / 2 * c + y
+    tr_x = length/2 * c + width/2 * (-s) + x
+    tr_y = length / 2 * s + width / 2 * c + y
+    bl_x = -length/2 * c + (-width/2) * (-s) + x
+    bl_y = -length / 2 * s + (-width / 2) * c + y
+    br_x = length/2 * c + (-width/2) * (-s) + x
+    br_y = length / 2 * s + (-width / 2) * c + y
+    vertices = np.asarray([[tl_x, tl_y], [bl_x, bl_y], [br_x, br_y], [tr_x, tr_y]])
+    # assert np.linalg.norm(vertices_1-vertices) < 1e-4
+    # print(vertices_1, vertices)
+    return vertices
+
+
+@njit(cache=True)
+def avgPoint(vertices):
+    """
+    Return the average point of multiple vertices
+    Args:
+        vertices (np.ndarray, (n, 2)): the vertices we want to find avg on
+    Returns:
+        avg (np.ndarray, (2,)): average point of the vertices
+    """
+    return np.sum(vertices, axis=0) / vertices.shape[0]
+
+
+@njit(cache=True)
+def tripleProduct(a, b, c):
+    """
+    Return triple product of three vectors
+    Args:
+        a, b, c (np.ndarray, (2,)): input vectors
+    Returns:
+        (np.ndarray, (2,)): triple product
+    """
+    ac = a.dot(c)
+    bc = b.dot(c)
+    return b * ac - a * bc
+
+
+@njit(cache=True)
+def perpendicular(pt):
+    """
+    Return a 2-vector's perpendicular vector
+    Args:
+        pt (np.ndarray, (2,)): input vector
+    Returns:
+        pt (np.ndarray, (2,)): perpendicular vector
+    """
+    temp = pt[0]
+    pt[0] = pt[1]
+    pt[1] = -1 * temp
+    return pt
+
+
+@njit(cache=True)
+def indexOfFurthestPoint(vertices, d):
+    """
+    Return the index of the vertex furthest away along a direction in the list of vertices
+    Args:
+        vertices (np.ndarray, (n, 2)): the vertices we want to find avg on
+    Returns:
+        idx (int): index of the furthest point
+    """
+    return np.argmax(vertices.dot(d))
+
+
+@njit(cache=True)
+def support(vertices1, vertices2, d):
+    """
+    Minkowski sum support function for GJK
+    Args:
+        vertices1 (np.ndarray, (n, 2)): vertices of the first body
+        vertices2 (np.ndarray, (n, 2)): vertices of the second body
+        d (np.ndarray, (2, )): direction to find the support along
+    Returns:
+        support (np.ndarray, (n, 2)): Minkowski sum
+    """
+    i = indexOfFurthestPoint(vertices1, d)
+    j = indexOfFurthestPoint(vertices2, -d)
+    return vertices1[i] - vertices2[j]
+
+
+@njit(cache=True)
+def collision(vertices1, vertices2):
+    """
+    GJK test to see whether two bodies overlap
+    Args:
+        vertices1 (np.ndarray, (n, 2)): vertices of the first body
+        vertices2 (np.ndarray, (n, 2)): vertices of the second body
+    Returns:
+        overlap (boolean): True if two bodies collide
+    """
+    index = 0
+    simplex = np.empty((3, 2))
+
+    position1 = avgPoint(vertices1)
+    position2 = avgPoint(vertices2)
+
+    d = position1 - position2
+
+    if d[0] == 0 and d[1] == 0:
+        d[0] = 1.0
+
+    a = support(vertices1, vertices2, d)
+    simplex[index, :] = a
+
+    if d.dot(a) <= 0:
+        return False
+
+    d = -a
+
+    iter_count = 0
+    while iter_count < 1e3:
+        a = support(vertices1, vertices2, d)
+        index += 1
+        simplex[index, :] = a
+        if d.dot(a) <= 0:
+            return False
+
+        ao = -a
+
+        if index < 2:
+            b = simplex[0, :]
+            ab = b - a
+            d = tripleProduct(ab, ao, ab)
+            if np.linalg.norm(d) < 1e-10:
+                d = perpendicular(ab)
+            continue
+
+        b = simplex[1, :]
+        c = simplex[0, :]
+        ab = b - a
+        ac = c - a
+
+        acperp = tripleProduct(ab, ac, ac)
+
+        if acperp.dot(ao) >= 0:
+            d = acperp
+        else:
+            abperp = tripleProduct(ac, ab, ab)
+            if abperp.dot(ao) < 0:
+                return True
+            simplex[0, :] = simplex[1, :]
+            d = abperp
+
+        simplex[1, :] = simplex[2, :]
+        index -= 1
+
+        iter_count += 1
+    return False

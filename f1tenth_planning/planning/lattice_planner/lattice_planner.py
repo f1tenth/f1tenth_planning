@@ -27,13 +27,13 @@ Author: Hongrui Zheng
 Last Modified: 6/13/22
 """
 
-from f1tenth_planning.utils.utils import nearest_point
-from f1tenth_planning.utils.utils import intersect_point
-from f1tenth_planning.utils.utils import get_rotation_matrix
-from f1tenth_planning.utils.utils import sample_traj
-from f1tenth_planning.utils.utils import zero_2_2pi
-from f1tenth_planning.utils.utils import pi_2_pi
-from f1tenth_planning.utils.utils import map_collision
+from f1tenth_planning.utils.utils import *
+# from f1tenth_planning.utils.utils import intersect_point
+# from f1tenth_planning.utils.utils import get_rotation_matrix
+# from f1tenth_planning.utils.utils import sample_traj
+# from f1tenth_planning.utils.utils import zero_2_2pi
+# from f1tenth_planning.utils.utils import pi_2_pi
+# from f1tenth_planning.utils.utils import map_collision
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
 
 from pyclothoids import Clothoid
@@ -56,6 +56,7 @@ class LatticePlanner():
         self.selection_func = None
 
         self.best_traj = None
+        self.prev_traj = np.array([False])
         self.goal_grid = None
 
         self.tracker = PurePursuitPlanner()
@@ -192,19 +193,23 @@ class LatticePlanner():
         if np.sum(cost_weights) != 1:
             raise ValueError('Cost weights must add up to 1.')
 
-        all_costs = []
+        cost = np.array([0.0] * len(all_traj_clothoid))
         # loop through all trajectories
-        # TODO: this could be vectorized by grouping all traj
-        for traj, traj_clothoid in zip(all_traj, all_traj_clothoid):
-            cost = 0.
-            # loop through all cost functions
-            for i, func in enumerate(self.cost_funcs):
-                if self.dt is None:
-                    cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses)
-                else:
-                    cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses, self.dt, self.map_metainfo)
-            all_costs.append(cost)
-        return all_costs
+        for i, func in enumerate(self.cost_funcs):
+            cur_cost = func(all_traj, all_traj_clothoid, opp_poses, self.prev_traj, self.dt, self.map_metainfo)
+            cost += cost_weights[i] * cur_cost
+        return cost
+        ### non-vectorized
+        # for traj, traj_clothoid in zip(all_traj, all_traj_clothoid):
+        #     cost = 0.
+        #     # loop through all cost functions
+        #     for i, func in enumerate(self.cost_funcs):
+        #         if self.dt is None:
+        #             cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses)
+        #         else:
+        #             cost += cost_weights[i] * func(traj, traj_clothoid, opp_poses, self.dt, self.map_metainfo)
+        #     all_costs.append(cost)
+        # return all_costs
 
 
     def select(self, all_costs):
@@ -222,7 +227,7 @@ class LatticePlanner():
         best_idx = self.selection_func(all_costs)
         return best_idx
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity, waypoints=None, opp_poses=None):
+    def plan(self, pose_x, pose_y, pose_theta, opp_poses, velocity, waypoints=None):
         """
         Plan for next step
 
@@ -260,7 +265,7 @@ class LatticePlanner():
         # select best trajectory
         best_traj_idx = self.select(all_costs)
         self.best_traj = all_traj[best_traj_idx]
-
+        self.prev_traj = self.best_traj.copy()
         # track best trajectory
         steer, speed = self.tracker.plan(pose_x,
                                          pose_y,
@@ -276,7 +281,7 @@ Example function for sampling a grid of goal points
 
 """
 
-@njit(cache=True)
+# @njit(cache=True)
 def sample_lookahead_square(pose_x,
                             pose_y,
                             pose_theta,
@@ -309,7 +314,7 @@ def sample_lookahead_square(pose_x,
     theta_grid = np.zeros((len(lookahead_distances), 1))
     v_grid = np.zeros((len(lookahead_distances), 1))
     for i, d in enumerate(lookahead_distances):
-        lh_pt, i2, t2 = intersect_point(nearest_p, d, waypoints[:, 0:2], t + nearest_i, wrap=True)
+        lh_pt, i2, t2 = intersect_point(np.ascontiguousarray(nearest_p), d, waypoints[:, 0:2], t + nearest_i, wrap=True)
         i2 = int(i2)
         lh_pt_theta = waypoints[i2, 3]
         lh_pt_v = waypoints[i2, 2]
@@ -327,44 +332,86 @@ def sample_lookahead_square(pose_x,
 
 Example functions for different costs
 
+traj: np.ndarray, (n, m, 5), (x, y, v, heading, arc_length)
+traj_clothoid: np.ndarray, (n, 6), (x0, y0, theta0, k0, dk, arc_length)
+opp_poses: np.ndarray, (k, 3)
+
+Return: 
+cost: np.ndarray, (n, 1) 
 """
+from sklearn.metrics import pairwise_distances_argmin
 
 @njit(cache=True)
-def get_length_cost(traj, traj_clothoid, opp_poses, dt=None, map_metainfo=None):
-    # not division by zero, grid lookup only returns s >= 0.
-    return traj_clothoid[-1]
+def get_length_cost(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
+    return traj_clothoid[:, -1]
+
 
 @njit(cache=True)
-def get_map_collision(traj, traj_clothoid, opp_poses, dt=None, map_metainfo=None):
+def get_map_collision(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
     if dt is None:
         raise ValueError('Map Distance Transform dt has to be set when using this cost function.')
-    collisions = map_collision(traj[:, 0:2], dt, map_metainfo)
-    if np.any(collisions):
-        return 100.
-    else:
-        return 0.
+    # points: (n, 2)
+    all_traj_pts = np.ascontiguousarray(traj).reshape(-1, 5)  # (nxm, 5)
+    collisions = map_collision(all_traj_pts[:, 0:2], dt, map_metainfo)  # (nxm)
+    collisions = collisions.reshape(len(traj), -1)  #(n, m)
+    cost = []
+    for traj_collision in collisions:
+        if np.any(traj_collision):
+            cost.append(100.)
+        else:
+            cost.append(0.)
+    return np.array(cost)
+
+
+def get_max_curvature(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
+    k0 = traj_clothoid[:, 3].reshape(-1, 1)  # (n, 1)
+    dk = traj_clothoid[:, 4].reshape(-1, 1)  # (n, 1)
+    s = traj_clothoid[:, -1].reshape(-1, 1)  # (n, 1)
+    k1 = k0 + dk * s  # (n, 1)
+    cost = np.max(np.hstack((k0, k1)), axis=1)
+    return cost
+
+
+def get_mean_curvature(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
+    # print('d')
+    k0 = traj_clothoid[:, 3].reshape(-1, 1)  # (n, 1)
+    dk = traj_clothoid[:, 4].reshape(-1, 1)  # (n, 1)
+    s = traj_clothoid[:, -1]  # (n, )
+    s_pts = np.linspace(np.zeros_like(s), s, num=traj.shape[1]).T  # (n, m)
+    traj_k = k0 + dk * s_pts  # (n, m)
+    cost = np.mean(traj_k, axis=1)
+    return cost
+
+
+def get_similarity_cost(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
+    scale = 10.0
+    if not prev_traj.all():
+        return np.zeros((len(traj)))
+    prev_traj = prev_traj[:, :2]
+    traj = traj[:, :, :2]
+    diff = traj-prev_traj
+    cost = diff * diff
+    cost = np.sum(cost, axis=(1, 2)) * scale
+    return cost
+
 
 @njit(cache=True)
-def get_max_curvature(traj_list, num_traj):
-    out = np.empty((num_traj, ))
-    for i in range(num_traj):
-        out[i] = np.max(np.abs(traj_list[i*trajectory_generator.NUM_STEPS:(i+1)*trajectory_generator.NUM_STEPS, 3]))
-    return out
+def get_obstacle_collision(traj, traj_clothoid, opp_poses=None, prev_traj=None, dt=None, map_metainfo=None):
+    width, length = 0.6, 0.3
+    n, m, _ = traj.shape
+    cost = np.zeros(n)
+    traj_xyt = traj[:, :, :3]
+    for i, tr in enumerate(traj_xyt):
+        # print(i)
+        close_p_idx = x2y_distances_argmin(np.ascontiguousarray(opp_poses[:, :2]), np.ascontiguousarray(tr[:, :2]))
+            # pairwise_distances_argmin(np.ascontiguousarray(opp_poses[:, :2]), np.ascontiguousarray(tr[:, :2]))
+            # (3, )
+        for opp_pose, p_idx in zip(opp_poses, close_p_idx):
+            opp_box = get_vertices(opp_pose, length, width)
+            p_box = get_vertices(tr[int(p_idx)], length, width)
+            if collision(opp_box, p_box):
+                cost[i] = 100.
+    return cost
 
-@njit(cache=True)
-def get_mean_curvature(traj_list, num_traj):
-    out = np.empty((num_traj, ))
-    for i in range(num_traj):
-        out[i] = np.mean(np.abs(traj_list[i*trajectory_generator.NUM_STEPS:(i+1)*trajectory_generator.NUM_STEPS, 3]))
-    return out
 
-@njit(cache=True)
-def get_similarity_cost(traj_list, prev_path, num_traj):
-    N = trajectory_generator.NUM_STEPS
-    prev_shifted = prev_path[N_SHIFT:-N_CULL, 2]
-    out = np.empty((num_traj, ))
-    for i in range(num_traj):
-        traj = traj_list[i*N:(i+1)*N, 2]
-        traj_shifted = traj[:- N_SHIFT - N_CULL]
-        out[i] = np.sum(np.square((traj_shifted - prev_shifted)))
-    return out
+

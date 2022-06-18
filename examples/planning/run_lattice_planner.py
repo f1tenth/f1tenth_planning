@@ -1,48 +1,94 @@
 import gym
 import numpy as np
+import random
 
-from f1tenth_planning.planning.lattice_planner.lattice_planner import LatticePlanner
-from f1tenth_planning.planning.lattice_planner.lattice_planner import sample_lookahead_square, get_length_cost, get_map_collision
+from f1tenth_planning.planning.lattice_planner.lattice_planner import *
+# from f1tenth_planning.planning.lattice_planner.lattice_planner import \
+#     sample_lookahead_square, get_length_cost, get_max_curvature, get_mean_curvature, get_similarity_cost
+from f1tenth_planning.planning.gap_follower.gap_follower import Gap_follower
+from f1tenth_planning.utils.utils import obsDict2oppoArray
+
+"""
+waypoints: [x, y, v, heading, kappa]
+"""
 
 from pyglet.gl import GL_POINTS
 
+
 def main():
+    """
+    Lattice Planner example. This example uses fixed waypoints throughout the 2 laps.
+    For an example using dynamic waypoints, see the lane switcher example.
+    """
     global planner
     global draw_grid_pts
     global draw_traj_pts
     global draw_target
-    """
-    Pure Pursuit example. This example uses fixed waypoints throughout the 2 laps.
-    For an example using dynamic waypoints, see the lane switcher example.
-    """
+    global draw_waypoints
+    global waypoints_xytheta
 
     # loading waypoints
-    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=0)
+    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=1)
+    waypoints_xytheta = np.hstack((waypoints[:, :2], waypoints[:, 3].reshape(-1, 1)))
     planner = LatticePlanner(waypoints=waypoints, map_path='./Spielberg_map', map_ext='.png')
     planner.add_sample_function(sample_lookahead_square)
-    planner.add_cost_function([get_length_cost, get_map_collision])
+    planner.add_cost_function(get_length_cost)
+    # planner.add_cost_function(get_mean_curvature)
+    # planner.add_cost_function(get_max_curvature)
+    planner.add_cost_function(get_similarity_cost)
+    planner.add_cost_function(get_obstacle_collision)
+    planner.add_cost_function(get_map_collision)
+
+    # planners for opponents
+    gap_follower = Gap_follower()
 
     # rendering
     draw_grid_pts = []
     draw_traj_pts = []
     draw_target = []
+    draw_waypoints = []
 
     # create environment
-    env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=1)
+    num_agents = 2
+    env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=num_agents)
     env.add_render_callback(render_callback)
-    obs, _, done, _ = env.reset(np.array([[0.0, -0.14, 3.40]]))
+    obs, _, done, _ = env.reset(random_position(num_agents))
     env.render()
 
     laptime = 0.0
     while not done:
+        # ego
+        # steer, speed = gap_follower.plan(obs['scans'][0])
+        oppo_pose = obsDict2oppoArray(obs)
         steer, speed, best_traj = planner.plan(obs['poses_x'][0],
                                                obs['poses_y'][0],
                                                obs['poses_theta'][0],
+                                               oppo_pose,
                                                1.7)
-        obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
+        action = np.array([[steer, 3*speed/4]])
+        # oppo
+        for i in range(1, num_agents):
+            scan = obs['scans'][i]
+            steer, _ = gap_follower.plan(scan)
+            action = np.vstack((action, np.array([[steer, 2*speed/3]])))
+        obs, timestep, done, _ = env.step(action)
         laptime += timestep
-        env.render(mode='human')
+        env.render(mode='human_fast')
     print('Sim elapsed time:', laptime)
+
+
+def random_position(sampled_number=1):
+    global waypoints_xytheta
+    ego_idx = random.sample(range(len(waypoints_xytheta)), 1)[0]
+    for i in range(sampled_number):
+        starting_idx = (ego_idx + i*10) % len(waypoints_xytheta)
+        x, y, theta = waypoints_xytheta[starting_idx][0],  waypoints_xytheta[starting_idx][1], waypoints_xytheta[starting_idx][2]
+        if i==0:
+            res = np.array([[x, y, theta]])  # (1, 3)
+        else:
+            res = np.vstack((res, np.array([[x, y, theta]])))
+    return res
+
 
 def render_callback(e):
     """
@@ -56,7 +102,8 @@ def render_callback(e):
     global draw_grid_pts
     global draw_traj_pts
     global draw_target
-
+    global draw_waypoints
+    global waypoints_xytheta
 
     # update camera to follow car
     x = e.cars[0].vertices[::2]
@@ -68,6 +115,16 @@ def render_callback(e):
     e.right = right + 400
     e.top = top + 400
     e.bottom = bottom - 400
+
+    scaled_points = 50. * waypoints_xytheta[:, :2]
+
+    # for i in range(waypoints_xytheta.shape[0]):
+    #     if len(draw_waypoints) < waypoints_xytheta.shape[0]:
+    #         b = e.batch.add(1, GL_POINTS, None, ('v3f/stream', [scaled_points[i, 0], scaled_points[i, 1], 0.]),
+    #                         ('c3B/stream', [183, 193, 222]))
+    #         draw_waypoints.append(b)
+    #     else:
+    #         draw_waypoints[i].vertices = [scaled_points[i, 0], scaled_points[i, 1], 0.]
 
     if planner.goal_grid is not None:
         goal_grid_pts = np.vstack([planner.goal_grid[:, 0], planner.goal_grid[:, 1]]).T
