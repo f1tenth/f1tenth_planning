@@ -39,19 +39,31 @@ def main():
     """
 
     # loading waypoints
-    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=0)
-    planner = STMPCPlanner(waypoints=waypoints)
+    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=1)
+    mpc_line = [waypoints[:, 0], waypoints[:, 1], waypoints[:, 3], waypoints[:, 4], waypoints[:, 2]]
+    planner = STMPCPlanner(waypoints=mpc_line)
 
     # create environment
     env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[0.0, -0.84, 3.40]]))
+    obs, _, done, _ = env.reset(np.array([[0.0, -0.14, 3.40]]))
 
     laptime = 0.0
+    up_to_speed = False
     while not done:
-        steer, speed = planner.plan(env.sim.agents[0].state)
-        obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
-        laptime += timestep
-        env.render(mode='human')
+        if up_to_speed:
+            steer, speed = planner.plan(env.sim.agents[0].state)
+            obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
+            laptime += timestep
+            env.render(mode='human')
+        else:
+            steer = 0.0
+            speed = 10.0
+            obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
+            laptime += timestep
+            env.render(mode='human')
+            if obs['linear_vels_x'][0] > 0.1:
+                up_to_speed = True
+        print(obs['linear_vels_x'][0])
     print('Sim elapsed time:', laptime)
 
 if __name__ == '__main__':
