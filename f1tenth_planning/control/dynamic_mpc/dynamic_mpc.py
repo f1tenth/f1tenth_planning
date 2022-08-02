@@ -24,7 +24,7 @@
 Dynamic Single Track MPC waypoint tracker
 
 Author: Hongrui Zheng, Johannes Betz, Ahmad Amine
-Last Modified: 7/26/22
+Last Modified: 8/1/22
 """
 
 import math

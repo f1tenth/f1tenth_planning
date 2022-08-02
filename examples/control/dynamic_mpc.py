@@ -24,7 +24,7 @@
 STMPC waypoint tracker example
 
 Author: Hongrui Zheng
-Last Modified: 7/26/22
+Last Modified: 8/1/22
 """
 
 import numpy as np
