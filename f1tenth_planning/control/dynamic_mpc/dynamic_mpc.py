@@ -51,10 +51,10 @@ class mpc_config:
         default_factory=lambda: diags([0.3, 0.01])
     )  # input difference cost matrix, penalty for change of inputs - [steering_speed, accel]
     Q: list = field(
-        default_factory=lambda: diags([32.0, 38.0, 0.0, 10.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([32.0, 32.0, 0.0, 5.0, 0.5, 0.0, 0.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
     Qf: list = field(
-        default_factory=lambda: diags([32.0, 38.0, 0.0, 10.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([32.0, 32.0, 0.0, 5.0, 0.5, 0.0, 0.0])
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     Rk: list = field(
         default_factory=lambda: np.diag([0.01, 100.0])
@@ -122,13 +122,12 @@ class STMPCPlanner:
         self.config = config
         self.vehicle_params = params
         self.target_ind = 0
-        self.target_ind_k = 0
         self.odelta_v = None
         self.oa = None
+        self.odelta = None
         self.origin_switch = 1
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
-        self.mpc_initialize = 0
 
     def plan(self, states, waypoints=None):
         """
@@ -167,7 +166,7 @@ class STMPCPlanner:
         )
 
         if states[3] <= self.config.V_KS:
-            self.target_ind_k = self.target_ind
+            
             (
                 speed,
                 steering_angle,
@@ -179,7 +178,7 @@ class STMPCPlanner:
                 mpc_oy,
             ) = self.MPC_Control_kinematic(vehicle_state, self.waypoints)
         else:
-            self.target_ind = self.target_ind_k
+            
             (
                 speed,
                 steering_angle,
@@ -255,7 +254,6 @@ class STMPCPlanner:
 
         # Initialize Parameter
         travel = 0.0
-        self.origin_switch = 1
 
         for i in range(self.config.T + 1):
             travel += (
@@ -1200,15 +1198,15 @@ class STMPCPlanner:
         # accelerate
         speed_output = vehicle_state.v + self.oa[0] * self.config.DT
 
-        # plt.cla()
-        # plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
-        # plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
-        # plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        # plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        # plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
-        # plt.legend()
-        # plt.pause(0.001)
-        # plt.axis('equal')
+        plt.cla()
+        plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
+        plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
+        plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
+        plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
+        plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
+        plt.legend()
+        plt.pause(0.001)
+        plt.axis('equal')
 
         return (
             speed_output,
@@ -1222,12 +1220,6 @@ class STMPCPlanner:
         )
 
     def MPC_Control_kinematic(self, vehicle_state, path):
-        # Initialize the MPC parameter
-        if self.mpc_initialize == 0:
-            self.target_ind_k = 0
-            self.odelta, self.oa = None, None
-            self.mpc_initialize = 1
-
         # Extract information about the trajectory that needs to be followed
         cx = path[0]  # Trajectory x-Position
         cy = path[1]  # Trajectory y-Position
@@ -1235,8 +1227,8 @@ class STMPCPlanner:
         sp = path[4]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        ref_path, self.target_ind_k, ref_delta = self.calc_ref_trajectory_kinematic(
-            vehicle_state, cx, cy, cyaw, sp, self.config.dl, self.target_ind_k
+        ref_path, self.target_ind, ref_delta = self.calc_ref_trajectory_kinematic(
+            vehicle_state, cx, cy, cyaw, sp, self.config.dl, self.target_ind
         )
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
@@ -1264,15 +1256,15 @@ class STMPCPlanner:
 
         speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
 
-        # plt.cla()
-        # plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
-        # plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
-        # plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        # plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        # plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
-        # plt.legend()
-        # plt.pause(0.001)
-        # plt.axis('equal')
+        plt.cla()
+        plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
+        plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
+        plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
+        plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
+        plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
+        plt.legend()
+        plt.pause(0.001)
+        plt.axis('equal')
 
         return (
             speed_output,

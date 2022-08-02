@@ -63,7 +63,6 @@ def main():
             env.render(mode='human')
             if obs['linear_vels_x'][0] > 0.1:
                 up_to_speed = True
-        print(obs['linear_vels_x'][0])
     print('Sim elapsed time:', laptime)
 
 if __name__ == '__main__':
