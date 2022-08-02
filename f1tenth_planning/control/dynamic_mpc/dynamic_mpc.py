@@ -63,15 +63,16 @@ class mpc_config:
         default_factory=lambda: np.diag([0.01, 100.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([32.0, 32.0, 5.0, 0.5])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
     Qfk: list = field(
-        default_factory=lambda: np.diag([32.0, 32.0, 5.0, 0.5])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     N_IND_SEARCH: int = 20  # Search index number
     DT: float = 0.025  # time step [s]
     DTK: float = 0.1  # time step [s] kinematic
-    dl: float = 0.1
+    dl: float = 0.1  # dist step [m]
+    dlk: float = 0.2  # dist step [m] kinematic
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
@@ -79,7 +80,7 @@ class mpc_config:
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MAX_DSTEER: float = np.deg2rad(180.0)  # maximum steering speed [rad/s]
     MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 3.0  # maximum speed [m/s]
+    MAX_SPEED: float = 8.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum acceleration [m/ss]
     V_KS: float = 2.0  # switching velocity from kinematic to dynamic [m/s]
@@ -1202,8 +1203,8 @@ class STMPCPlanner:
         plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
         plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
         plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
+        plt.scatter(ref_path[0], ref_path[1], marker='x', linewidth=4, color='purple',label='MPC Input: Ref. Trajectory for T steps')
+        plt.scatter(ox, oy, marker='o', linewidth=4, color='green',label='MPC Output: Trajectory for T steps')
         plt.legend()
         plt.pause(0.001)
         plt.axis('equal')
@@ -1228,7 +1229,7 @@ class STMPCPlanner:
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
         ref_path, self.target_ind, ref_delta = self.calc_ref_trajectory_kinematic(
-            vehicle_state, cx, cy, cyaw, sp, self.config.dl, self.target_ind
+            vehicle_state, cx, cy, cyaw, sp, self.config.dlk, self.target_ind
         )
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
@@ -1260,8 +1261,8 @@ class STMPCPlanner:
         plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
         plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
         plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        plt.plot(ref_path[0], ref_path[1], linestyle='dotted', linewidth=8, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        plt.plot(ox, oy, linestyle='dotted', linewidth=5, color='green',label='MPC Output: Trajectory for T steps')
+        plt.scatter(ref_path[0], ref_path[1], marker='x', linewidth=4, color='purple',label='MPC Input: Ref. Trajectory for T steps')
+        plt.scatter(ox, oy, marker='o', linewidth=4, color='green',label='MPC Output: Trajectory for T steps')
         plt.legend()
         plt.pause(0.001)
         plt.axis('equal')
