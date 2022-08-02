@@ -71,8 +71,8 @@ class mpc_config:
     N_IND_SEARCH: int = 20  # Search index number
     DT: float = 0.025  # time step [s]
     DTK: float = 0.1  # time step [s] kinematic
-    dl: float = 0.03  # dist step [m]
-    dlk: float = 0.03  # dist step [m] kinematic
+    dl: float = 0.1  # dist step [m]
+    dlk: float = 0.1  # dist step [m] kinematic
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
@@ -80,7 +80,7 @@ class mpc_config:
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MAX_DSTEER: float = np.deg2rad(180.0)  # maximum steering speed [rad/s]
     MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 3.0  # maximum speed [m/s]
+    MAX_SPEED: float = 6.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum acceleration [m/ss]
     V_KS: float = 2.0  # switching velocity from kinematic to dynamic [m/s]
@@ -122,10 +122,10 @@ class STMPCPlanner:
         self.waypoints = waypoints
         self.config = config
         self.vehicle_params = params
-        self.target_ind = 996
+        self.target_ind = 0
         self.odelta_v = None
         self.oa = None
-        self.origin_switch = 996
+        self.origin_switch = 1
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
 
@@ -166,7 +166,7 @@ class STMPCPlanner:
         )
 
         if states[3] <= self.config.V_KS:
-            
+
             (
                 speed,
                 steering_angle,
@@ -178,7 +178,7 @@ class STMPCPlanner:
                 mpc_oy,
             ) = self.MPC_Control_kinematic(vehicle_state, self.waypoints)
         else:
-            
+
             (
                 speed,
                 steering_angle,
@@ -198,31 +198,10 @@ class STMPCPlanner:
         :param node: path information X-Position, Y-Position, current index.
         :return: nearest index,
         """
+        # return ind, mind
+        _, _, _, ind = nearest_point(np.array([state.x, state.y]), np.array([cx, cy]).T)
 
-        if pind == len(cx) - 1:
-            dx = [state.x - icx for icx in cx[0 : (0 + self.config.N_IND_SEARCH)]]
-            dy = [state.y - icy for icy in cy[0 : (0 + self.config.N_IND_SEARCH)]]
-
-            d = [idx**2 + idy**2 for (idx, idy) in zip(dx, dy)]
-            mind = min(d)
-            ind = d.index(mind) + 0
-
-        else:
-            dx = [state.x - icx for icx in cx[pind : (pind + self.config.N_IND_SEARCH)]]
-            dy = [state.y - icy for icy in cy[pind : (pind + self.config.N_IND_SEARCH)]]
-
-            d = [idx**2 + idy**2 for (idx, idy) in zip(dx, dy)]
-            mind = min(d)
-            ind = d.index(mind) + pind
-
-        mind = math.sqrt(mind)
-        dxl = cx[ind] - state.x
-        dyl = cy[ind] - state.y
-        angle = pi_2_pi(cyaw[ind] - math.atan2(dyl, dxl))
-        if angle < 0:
-            mind *= -1
-
-        return ind, mind
+        return ind, None
 
     def calc_ref_trajectory(self, state, cx, cy, cyaw, sp, dl, pind):
         """
@@ -252,38 +231,19 @@ class STMPCPlanner:
         ref_traj[4, 0] = cyaw[ind]
         dref[0, 0] = 0.0  # steer operational point should be 0
 
-        # Initialize Parameter
-        travel = 0.0
-
-        for i in range(self.config.T + 1):
-            travel += (
-                abs(state.v) * self.config.DT
-            )  # Travel Distance into the future based on current velocity: s= v * t
-            dind = int(
-                round(travel / self.config.dl)
-            )  # Number of distance steps we need to look into the future
-
-            if (ind + dind) < ncourse:
-                ref_traj[0, i] = cx[ind + dind]
-                ref_traj[1, i] = cy[ind + dind]
-                ref_traj[3, i] = sp[ind + dind]
-
-                # IMPORTANT: Take Care of Heading Change from 2pi -> 0 and 0 -> 2pi, so that all headings are the same
-                if cyaw[ind + dind] - state.yaw > 5:
-                    ref_traj[4, i] = abs(cyaw[ind + dind] - 2 * math.pi)
-                elif cyaw[ind + dind] - state.yaw < -5:
-                    ref_traj[4, i] = abs(cyaw[ind + dind] + 2 * math.pi)
-                else:
-                    ref_traj[4, i] = cyaw[ind + dind]
-
-            else:
-                # This function takes care about the switch at the origin/ Lap switch
-                ref_traj[0, i] = cx[self.origin_switch]
-                ref_traj[1, i] = cy[self.origin_switch]
-                ref_traj[3, i] = sp[self.origin_switch]
-                ref_traj[4, i] = cyaw[self.origin_switch]
-                dref[0, i] = 0.0
-                self.origin_switch = self.origin_switch + 1
+        # based on current velocity, distance traveled on the ref line between time steps
+        travel = abs(state.v) * self.config.DT
+        dind = travel / self.config.dl
+        ind_list = int(ind) + np.insert(
+            np.cumsum(np.repeat(dind, self.config.T)), 0, 0
+        ).astype(int)
+        ind_list[ind_list >= ncourse] -= ncourse
+        ref_traj[0, :] = cx[ind_list]
+        ref_traj[1, :] = cy[ind_list]
+        ref_traj[3, :] = sp[ind_list]
+        cyaw[cyaw - state.yaw > 5] = np.abs(cyaw[cyaw - state.yaw > 5] - (2 * np.pi))
+        cyaw[cyaw - state.yaw < -5] = np.abs(cyaw[cyaw - state.yaw < -5] + (2 * np.pi))
+        ref_traj[4, :] = cyaw[ind_list]
 
         return ref_traj, ind, dref
 
@@ -313,38 +273,21 @@ class STMPCPlanner:
         ref_traj[1, 0] = cy[ind]
         ref_traj[2, 0] = sp[ind]
         ref_traj[3, 0] = cyaw[ind]
-        
-        dref[0, 0] = 0.0                # steer operational point should be 0
+        dref[0, 0] = 0.0  # steer operational point should be 0
 
-        # Initialize Parameter
-        travel = 0.0
-        self.origin_switch = 1
-
-        for i in range(self.config.TK + 1):
-            travel += abs(state.v) * self.config.DTK     # Travel Distance into the future based on current velocity: s= v * t
-            dind = int(round(travel / dl))  # Number of distance steps we need to look into the future
-
-            if (ind + dind) < ncourse:
-                ref_traj[0, i] = cx[ind + dind]
-                ref_traj[1, i] = cy[ind + dind]
-                ref_traj[2, i] = sp[ind + dind]
-
-                # IMPORTANT: Take Care of Heading Change from 2pi -> 0 and 0 -> 2pi, so that all headings are the same
-                if cyaw[ind + dind] -state.yaw > 5:
-                    ref_traj[3, i] = abs(cyaw[ind + dind] -2* math.pi)
-                elif cyaw[ind + dind] -state.yaw < -5:
-                    ref_traj[3, i] = abs(cyaw[ind + dind] + 2 * math.pi)
-                else:
-                    ref_traj[3, i] = cyaw[ind + dind]
-
-            else:
-                # This function takes care about the switch at the origin/ Lap switch
-                ref_traj[0, i] = cx[self.origin_switch]
-                ref_traj[1, i] = cy[self.origin_switch]
-                ref_traj[2, i] = sp[self.origin_switch]
-                ref_traj[3, i] = cyaw[self.origin_switch]
-                dref[0, i] = 0.0
-                self.origin_switch = self.origin_switch +1
+        # based on current velocity, distance traveled on the ref line between time steps
+        travel = abs(state.v) * self.config.DTK
+        dind = travel / self.config.dlk
+        ind_list = int(ind) + np.insert(
+            np.cumsum(np.repeat(dind, self.config.TK)), 0, 0
+        ).astype(int)
+        ind_list[ind_list >= ncourse] -= ncourse
+        ref_traj[0, :] = cx[ind_list]
+        ref_traj[1, :] = cy[ind_list]
+        ref_traj[2, :] = sp[ind_list]
+        cyaw[cyaw - state.yaw > 5] = np.abs(cyaw[cyaw - state.yaw > 5] - (2 * np.pi))
+        cyaw[cyaw - state.yaw < -5] = np.abs(cyaw[cyaw - state.yaw < -5] + (2 * np.pi))
+        ref_traj[3, :] = cyaw[ind_list]
 
         return ref_traj, ind, dref
 
@@ -1194,15 +1137,45 @@ class STMPCPlanner:
         # accelerate
         speed_output = vehicle_state.v + self.oa[0] * self.config.DT
 
-        plt.cla()
-        plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
-        plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
-        plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        plt.scatter(ref_path[0], ref_path[1], marker='x', linewidth=4, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        plt.scatter(ox, oy, marker='o', linewidth=4, color='green',label='MPC Output: Trajectory for T steps')
-        plt.legend()
-        plt.pause(0.001)
-        plt.axis('equal')
+        # plt.cla()
+        # plt.axis(
+        #     [
+        #         vehicle_state.x - 6,
+        #         vehicle_state.x + 4.5,
+        #         vehicle_state.y - 2.5,
+        #         vehicle_state.y + 2.5,
+        #     ]
+        # )
+        # plt.plot(
+        #     cx, cy, linestyle="solid", linewidth=2, color="#005293", label="Raceline"
+        # )
+        # plt.plot(
+        #     vehicle_state.x,
+        #     vehicle_state.y,
+        #     marker="o",
+        #     markersize=10,
+        #     color="red",
+        #     label="CoG",
+        # )
+        # plt.scatter(
+        #     ref_path[0],
+        #     ref_path[1],
+        #     marker="x",
+        #     linewidth=4,
+        #     color="purple",
+        #     label="MPC Input: Ref. Trajectory for T steps",
+        # )
+        # plt.scatter(
+        #     ox,
+        #     oy,
+        #     marker="o",
+        #     linewidth=4,
+        #     color="green",
+        #     label="MPC Output: Trajectory for T steps",
+        # )
+        # plt.legend()
+        # plt.pause(0.000001)
+        # plt.axis("equal")
 
         return (
             speed_output,
@@ -1252,15 +1225,45 @@ class STMPCPlanner:
 
         speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
 
-        plt.cla()
-        plt.axis([vehicle_state.x - 6, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
-        plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
-        plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        plt.scatter(ref_path[0], ref_path[1], marker='x', linewidth=4, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        plt.scatter(ox, oy, marker='o', linewidth=4, color='green',label='MPC Output: Trajectory for T steps')
-        plt.legend()
-        plt.pause(0.001)
-        plt.axis('equal')
+        # plt.cla()
+        # plt.axis(
+        #     [
+        #         vehicle_state.x - 6,
+        #         vehicle_state.x + 4.5,
+        #         vehicle_state.y - 2.5,
+        #         vehicle_state.y + 2.5,
+        #     ]
+        # )
+        # plt.plot(
+        #     cx, cy, linestyle="solid", linewidth=2, color="#005293", label="Raceline"
+        # )
+        # plt.plot(
+        #     vehicle_state.x,
+        #     vehicle_state.y,
+        #     marker="o",
+        #     markersize=10,
+        #     color="red",
+        #     label="CoG",
+        # )
+        # plt.scatter(
+        #     ref_path[0],
+        #     ref_path[1],
+        #     marker="x",
+        #     linewidth=4,
+        #     color="purple",
+        #     label="MPC Input: Ref. Trajectory for T steps",
+        # )
+        # plt.scatter(
+        #     ox,
+        #     oy,
+        #     marker="o",
+        #     linewidth=4,
+        #     color="green",
+        #     label="MPC Output: Trajectory for T steps",
+        # )
+        # plt.legend()
+        # plt.pause(0.000001)
+        # plt.axis("equal")
 
         return (
             speed_output,

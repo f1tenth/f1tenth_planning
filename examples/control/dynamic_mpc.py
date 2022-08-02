@@ -29,6 +29,7 @@ Last Modified: 8/1/22
 
 import numpy as np
 import gym
+import time
 
 from f1tenth_planning.control.dynamic_mpc.dynamic_mpc import STMPCPlanner
 
@@ -39,13 +40,13 @@ def main():
     """
 
     # loading waypoints
-    waypoints = np.loadtxt('./levine_centerline.csv', delimiter=';', skiprows=3)
+    waypoints = np.loadtxt('./levine_raceline.csv', delimiter=';', skiprows=3)
     mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 4], waypoints[:, 5]]
     planner = STMPCPlanner(waypoints=mpc_line)
 
     # create environment
     env = gym.make('f110_gym:f110-v0', map='./levine_slam', map_ext='.pgm', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[-20.85, 2.43, -1.57]]))
+    obs, _, done, _ = env.reset(np.array([[2.51, 3.29, 1.58]]))
 
     laptime = 0.0
     up_to_speed = False
@@ -55,6 +56,7 @@ def main():
             obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
             laptime += timestep
             env.render(mode='human')
+            # time.sleep(0.1)
         else:
             steer = 0.0
             speed = 10.0
@@ -63,7 +65,7 @@ def main():
             env.render(mode='human')
             if obs['linear_vels_x'][0] > 0.1:
                 up_to_speed = True
-        print(obs['linear_vels_x'][0])
+        # print(obs['linear_vels_x'][0])
     print('Sim elapsed time:', laptime)
 
 if __name__ == '__main__':
