@@ -51,10 +51,10 @@ class mpc_config:
         default_factory=lambda: diags([0.3, 0.01])
     )  # input difference cost matrix, penalty for change of inputs - [steering_speed, accel]
     Q: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 5.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
     Qf: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 5.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     Rk: list = field(
         default_factory=lambda: np.diag([0.01, 100.0])
@@ -71,8 +71,8 @@ class mpc_config:
     N_IND_SEARCH: int = 20  # Search index number
     DT: float = 0.025  # time step [s]
     DTK: float = 0.1  # time step [s] kinematic
-    dl: float = 0.1  # dist step [m]
-    dlk: float = 0.2  # dist step [m] kinematic
+    dl: float = 0.03  # dist step [m]
+    dlk: float = 0.03  # dist step [m] kinematic
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
@@ -80,7 +80,7 @@ class mpc_config:
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MAX_DSTEER: float = np.deg2rad(180.0)  # maximum steering speed [rad/s]
     MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 8.0  # maximum speed [m/s]
+    MAX_SPEED: float = 3.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum acceleration [m/ss]
     V_KS: float = 2.0  # switching velocity from kinematic to dynamic [m/s]
@@ -122,11 +122,10 @@ class STMPCPlanner:
         self.waypoints = waypoints
         self.config = config
         self.vehicle_params = params
-        self.target_ind = 0
+        self.target_ind = 996
         self.odelta_v = None
         self.oa = None
-        self.odelta = None
-        self.origin_switch = 1
+        self.origin_switch = 996
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
 
@@ -1079,7 +1078,7 @@ class STMPCPlanner:
         :return: acceleration and delta strategy based on current information
         """
 
-        if oa is None or od_v is None:
+        if oa is None or od_v is None or oa.shape[0] < self.config.T:
             oa = [0.0] * self.config.T
             od_v = [0.0] * self.config.T
 
@@ -1167,8 +1166,8 @@ class STMPCPlanner:
         # Solve the Linear MPC Control problem and provide output
         # Acceleration, Steering Speed, x-pos, y-pos, steering angle, speed, yaw, yawrate, side slip angle and Predicted sates
         (
-            oa,
-            odelta_v,
+            self.oa,
+            self.odelta_v,
             ox,
             oy,
             odelta,
@@ -1180,10 +1179,6 @@ class STMPCPlanner:
         ) = self.linear_mpc_control(
             ref_path, x0, self.oa, self.odelta_v, vehicle_params
         )
-
-        # Write the control parameters to self
-        self.oa = oa
-        self.odelta_v = odelta_v
 
         if self.odelta_v is not None:
             di_v, ai = self.odelta_v[0], self.oa[0]
@@ -1237,23 +1232,23 @@ class STMPCPlanner:
         # Solve the Linear MPC Control problem
         (
             self.oa,
-            self.odelta,
+            self.odelta_v,
             ox,
             oy,
             oyaw,
             ov,
             state_predict,
         ) = self.linear_mpc_control_kinematic(
-            ref_path, x0, ref_delta, self.oa, self.odelta
+            ref_path, x0, ref_delta, self.oa, self.odelta_v
         )
 
-        if self.odelta is not None:
-            di, ai = self.odelta[0], self.oa[0]
+        if self.odelta_v is not None:
+            di, ai = self.odelta_v[0], self.oa[0]
 
         # Create the final steer and speed parameter that need to be sent out
 
         # Steering Output: First entry of the MPC steering angle output vector in degree
-        steer_output = self.odelta[0]
+        steer_output = self.odelta_v[0]
 
         speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
 
