@@ -39,13 +39,14 @@ def main():
     """
 
     # loading waypoints
-    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=1)
-    mpc_line = [waypoints[:, 0], waypoints[:, 1], waypoints[:, 3], waypoints[:, 4], waypoints[:, 2]]
+    waypoints = np.loadtxt('./levine_centerline.csv', delimiter=';', skiprows=3)
+    # [x, y, yaw, v]
+    mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 5]]
     planner = KMPCPlanner(waypoints=mpc_line)
 
     # create environment
-    env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[0.0, -0.14, 3.40]]))
+    env = gym.make('f110_gym:f110-v0', map='./levine_slam', map_ext='.pgm', num_agents=1)
+    obs, _, done, _ = env.reset(np.array([[2.51, 3.29, 1.58]]))
 
     laptime = 0.0
     up_to_speed = False

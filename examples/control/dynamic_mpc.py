@@ -40,8 +40,9 @@ def main():
     """
 
     # loading waypoints
-    waypoints = np.loadtxt('./levine_raceline.csv', delimiter=';', skiprows=3)
-    mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 4], waypoints[:, 5]]
+    waypoints = np.loadtxt('./levine_centerline.csv', delimiter=';', skiprows=3)
+    # [x, y, yaw, v]
+    mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 5]]
     planner = STMPCPlanner(waypoints=mpc_line)
 
     # create environment
@@ -65,7 +66,6 @@ def main():
             env.render(mode='human')
             if obs['linear_vels_x'][0] > 0.1:
                 up_to_speed = True
-        # print(obs['linear_vels_x'][0])
     print('Sim elapsed time:', laptime)
 
 if __name__ == '__main__':

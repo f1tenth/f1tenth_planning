@@ -43,10 +43,10 @@ class mpc_config:
     NU: int = 2  # length of input vector: u = = [steering speed, acceleration]
     TK: int = 8  # finite time horizon length kinematic
     Rk: list = field(
-        default_factory=lambda: np.diag([0.1, 100.])
+        default_factory=lambda: np.diag([0.01, 100.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.1, 100.])
+        default_factory=lambda: np.diag([0.01, 100.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
         default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
@@ -56,7 +56,7 @@ class mpc_config:
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     N_IND_SEARCH: int = 20  # Search index number
     DTK: float = 0.1  # time step [s] kinematic
-    dlk: float = 0.2  # dist step [m] kinematic
+    dlk: float = 0.03  # dist step [m] kinematic
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
@@ -64,7 +64,7 @@ class mpc_config:
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MAX_DSTEER: float = np.deg2rad(180.0)  # maximum steering speed [rad/s]
     MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 8.0  # maximum speed [m/s]
+    MAX_SPEED: float = 6.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum acceleration [m/ss]
 
@@ -101,16 +101,16 @@ class KMPCPlanner:
         params=np.array(
             [3.74, 0.15875, 0.17145, 0.074, 4.718, 5.4562, 0.04712, 1.0489]
         ),
+        debug=False,
     ):
         self.waypoints = waypoints
         self.config = config
         self.vehicle_params = params
-        self.target_ind = 0
         self.odelta_v = None
         self.oa = None
         self.odelta = None
-        self.origin_switch = 1
         self.init_flag = 0
+        self.debug = debug
         self.mpc_prob_init_kinematic()
 
     def plan(self, states, waypoints=None):
@@ -160,39 +160,7 @@ class KMPCPlanner:
 
         return steering_angle, speed
 
-    def calc_nearest_index(self, state, cx, cy, cyaw, pind):
-        """
-        calc index of the nearest ref trajector in N steps
-        :param node: path information X-Position, Y-Position, current index.
-        :return: nearest index,
-        """
-
-        if pind == len(cx) - 1:
-            dx = [state.x - icx for icx in cx[0 : (0 + self.config.N_IND_SEARCH)]]
-            dy = [state.y - icy for icy in cy[0 : (0 + self.config.N_IND_SEARCH)]]
-
-            d = [idx**2 + idy**2 for (idx, idy) in zip(dx, dy)]
-            mind = min(d)
-            ind = d.index(mind) + 0
-
-        else:
-            dx = [state.x - icx for icx in cx[pind : (pind + self.config.N_IND_SEARCH)]]
-            dy = [state.y - icy for icy in cy[pind : (pind + self.config.N_IND_SEARCH)]]
-
-            d = [idx**2 + idy**2 for (idx, idy) in zip(dx, dy)]
-            mind = min(d)
-            ind = d.index(mind) + pind
-
-        mind = math.sqrt(mind)
-        dxl = cx[ind] - state.x
-        dyl = cy[ind] - state.y
-        angle = pi_2_pi(cyaw[ind] - math.atan2(dyl, dxl))
-        if angle < 0:
-            mind *= -1
-
-        return ind, mind
-
-    def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp, dl, pind):
+    def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp):
         """
         calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
         using the current velocity, calc the T points along the reference path
@@ -207,51 +175,36 @@ class KMPCPlanner:
 
         # Create placeholder Arrays for the reference trajectory for T steps
         ref_traj = np.zeros((self.config.NXK, self.config.TK + 1))
-        dref = np.zeros((1, self.config.TK + 1))
         ncourse = len(cx)
 
         # Find nearest index/setpoint from where the trajectories are calculated
-        ind, _ = self.calc_nearest_index(state, cx, cy, cyaw, pind)
+        _, _, _, ind = nearest_point(np.array([state.x, state.y]), np.array([cx, cy]).T)
 
         # Load the initial parameters from the setpoint into the trajectory
         ref_traj[0, 0] = cx[ind]
         ref_traj[1, 0] = cy[ind]
         ref_traj[2, 0] = sp[ind]
         ref_traj[3, 0] = cyaw[ind]
-        
-        dref[0, 0] = 0.0                # steer operational point should be 0
 
-        # Initialize Parameter
-        travel = 0.0
-        self.origin_switch = 1
+        # based on current velocity, distance traveled on the ref line between time steps
+        travel = abs(state.v) * self.config.DTK
+        dind = travel / self.config.dlk
+        ind_list = int(ind) + np.insert(
+            np.cumsum(np.repeat(dind, self.config.TK)), 0, 0
+        ).astype(int)
+        ind_list[ind_list >= ncourse] -= ncourse
+        ref_traj[0, :] = cx[ind_list]
+        ref_traj[1, :] = cy[ind_list]
+        ref_traj[2, :] = sp[ind_list]
+        cyaw[cyaw - state.yaw > 4.5] = np.abs(
+            cyaw[cyaw - state.yaw > 4.5] - (2 * np.pi)
+        )
+        cyaw[cyaw - state.yaw < -4.5] = np.abs(
+            cyaw[cyaw - state.yaw < -4.5] + (2 * np.pi)
+        )
+        ref_traj[3, :] = cyaw[ind_list]
 
-        for i in range(self.config.TK + 1):
-            travel += abs(state.v) * self.config.DTK     # Travel Distance into the future based on current velocity: s= v * t
-            dind = int(round(travel / dl))  # Number of distance steps we need to look into the future
-
-            if (ind + dind) < ncourse:
-                ref_traj[0, i] = cx[ind + dind]
-                ref_traj[1, i] = cy[ind + dind]
-                ref_traj[2, i] = sp[ind + dind]
-
-                # IMPORTANT: Take Care of Heading Change from 2pi -> 0 and 0 -> 2pi, so that all headings are the same
-                if cyaw[ind + dind] -state.yaw > 5:
-                    ref_traj[3, i] = abs(cyaw[ind + dind] -2* math.pi)
-                elif cyaw[ind + dind] -state.yaw < -5:
-                    ref_traj[3, i] = abs(cyaw[ind + dind] + 2 * math.pi)
-                else:
-                    ref_traj[3, i] = cyaw[ind + dind]
-
-            else:
-                # This function takes care about the switch at the origin/ Lap switch
-                ref_traj[0, i] = cx[self.origin_switch]
-                ref_traj[1, i] = cy[self.origin_switch]
-                ref_traj[2, i] = sp[self.origin_switch]
-                ref_traj[3, i] = cyaw[self.origin_switch]
-                dref[0, i] = 0.0
-                self.origin_switch = self.origin_switch +1
-
-        return ref_traj, ind, dref
+        return ref_traj
 
     def predict_motion_kinematic(self, x0, oa, od, xref):
         path_predict = xref * 0.0
@@ -279,7 +232,7 @@ class KMPCPlanner:
         state.x = state.x + state.v * math.cos(state.yaw) * self.config.DTK
         state.y = state.y + state.v * math.sin(state.yaw) * self.config.DTK
         state.yaw = (
-            state.yaw + state.v / self.config.WB * math.tan(delta) * self.config.DTK
+            state.yaw + (state.v / self.config.WB) * math.tan(delta) * self.config.DTK
         )
         state.v = state.v + a * self.config.DTK
 
@@ -388,10 +341,9 @@ class KMPCPlanner:
         C_block = []
         # init path to zeros
         path_predict = np.zeros((self.config.NXK, self.config.TK + 1))
-        dref = np.zeros((1, self.config.TK + 1))
         for t in range(self.config.TK):
             A, B, C = self.get_kinematic_model_matrix(
-                path_predict[2, t], path_predict[3, t], dref[0, t]
+                path_predict[2, t], path_predict[3, t], 0.0
             )
             A_block.append(A)
             B_block.append(B)
@@ -453,7 +405,7 @@ class KMPCPlanner:
         # Optimization goal: minimize the objective function
         self.MPC_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
 
-    def mpc_prob_solve_kinematic(self, ref_traj, path_predict, x0, dref):
+    def mpc_prob_solve_kinematic(self, ref_traj, path_predict, x0):
         self.x0k.value = x0
 
         A_block = []
@@ -461,7 +413,7 @@ class KMPCPlanner:
         C_block = []
         for t in range(self.config.TK):
             A, B, C = self.get_kinematic_model_matrix(
-                path_predict[2, t], path_predict[3, t], dref[0, t]
+                path_predict[2, t], path_predict[3, t], 0.0
             )
             A_block.append(A)
             B_block.append(B)
@@ -498,7 +450,7 @@ class KMPCPlanner:
 
         return oa, odelta, ox, oy, oyaw, ov
 
-    def linear_mpc_control_kinematic(self, ref_path, x0, dref, oa, od):
+    def linear_mpc_control_kinematic(self, ref_path, x0, oa, od):
         """
         MPC contorl with updating operational point iteraitvely
         :param ref_path: reference trajectory in T steps
@@ -518,7 +470,7 @@ class KMPCPlanner:
 
         # Run the MPC optimization: Create and solve the optimization problem
         mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v = self.mpc_prob_solve_kinematic(
-            ref_path, path_predict, x0, dref
+            ref_path, path_predict, x0
         )
 
         return mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v, path_predict
@@ -528,47 +480,79 @@ class KMPCPlanner:
         cx = path[0]  # Trajectory x-Position
         cy = path[1]  # Trajectory y-Position
         cyaw = path[2]  # Trajectory Heading angle
-        sp = path[4]  # Trajectory Velocity
+        sp = path[3]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        ref_path, self.target_ind, ref_delta = self.calc_ref_trajectory_kinematic(
-            vehicle_state, cx, cy, cyaw, sp, self.config.dlk, self.target_ind
-        )
+        ref_path = self.calc_ref_trajectory_kinematic(vehicle_state, cx, cy, cyaw, sp)
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
 
         # Solve the Linear MPC Control problem
         (
             self.oa,
-            self.odelta,
+            self.odelta_v,
             ox,
             oy,
             oyaw,
             ov,
             state_predict,
-        ) = self.linear_mpc_control_kinematic(
-            ref_path, x0, ref_delta, self.oa, self.odelta
-        )
+        ) = self.linear_mpc_control_kinematic(ref_path, x0, self.oa, self.odelta_v)
 
-        if self.odelta is not None:
-            di, ai = self.odelta[0], self.oa[0]
+        if self.odelta_v is not None:
+            di, ai = self.odelta_v[0], self.oa[0]
 
         # Create the final steer and speed parameter that need to be sent out
 
         # Steering Output: First entry of the MPC steering angle output vector in degree
-        steer_output = self.odelta[0]
+        steer_output = self.odelta_v[0]
 
         speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
 
-        plt.cla()
-        plt.axis([vehicle_state.x - 12, vehicle_state.x + 4.5, vehicle_state.y - 2.5, vehicle_state.y  + 2.5])
-        plt.plot(cx, cy, linestyle='solid', linewidth=2, color='#005293', label='Raceline')
-        plt.plot(vehicle_state.x, vehicle_state.y, marker='o', markersize=10, color='red', label='CoG')
-        plt.scatter(ref_path[0], ref_path[1], marker='x', linewidth=4, color='purple',label='MPC Input: Ref. Trajectory for T steps')
-        plt.scatter(ox, oy, marker='o', linewidth=4, color='green',label='MPC Output: Trajectory for T steps')
-        plt.legend()
-        plt.pause(0.001)
-        plt.axis('equal')
+        if self.debug:
+            plt.cla()
+            plt.axis(
+                [
+                    vehicle_state.x - 6,
+                    vehicle_state.x + 4.5,
+                    vehicle_state.y - 2.5,
+                    vehicle_state.y + 2.5,
+                ]
+            )
+            plt.plot(
+                cx,
+                cy,
+                linestyle="solid",
+                linewidth=2,
+                color="#005293",
+                label="Raceline",
+            )
+            plt.plot(
+                vehicle_state.x,
+                vehicle_state.y,
+                marker="o",
+                markersize=10,
+                color="red",
+                label="CoG",
+            )
+            plt.scatter(
+                ref_path[0],
+                ref_path[1],
+                marker="x",
+                linewidth=4,
+                color="purple",
+                label="MPC Input: Ref. Trajectory for T steps",
+            )
+            plt.scatter(
+                ox,
+                oy,
+                marker="o",
+                linewidth=4,
+                color="green",
+                label="MPC Output: Trajectory for T steps",
+            )
+            plt.legend()
+            plt.pause(0.000001)
+            plt.axis("equal")
 
         return (
             speed_output,
