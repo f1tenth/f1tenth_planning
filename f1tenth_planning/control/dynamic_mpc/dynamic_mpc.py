@@ -35,6 +35,7 @@ import numpy as np
 from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
+from cvxpy.atoms.affine.wraps import psd_wrap
 
 
 @dataclass
@@ -613,13 +614,13 @@ class STMPCPlanner:
         # The FTOCP has the horizon of T timesteps
 
         # Objective 1: Influence of the control inputs: Inputs u multiplied by the penalty R
-        objective += cvxpy.quad_form(cvxpy.vec(self.u), R_block)
+        objective += cvxpy.quad_form(cvxpy.vec(self.u), psd_wrap(R_block))
 
         # Objective 2: Deviation of the vehicle from the reference trajectory weighted by Q, including final Timestep T weighted by Qf
-        objective += cvxpy.quad_form(cvxpy.vec(self.x - self.ref_traj), Q_block)
+        objective += cvxpy.quad_form(cvxpy.vec(self.x - self.ref_traj), psd_wrap(Q_block))
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
-        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.u, axis=1)), Rd_block)
+        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.u, axis=1)), psd_wrap(Rd_block))
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps
@@ -753,13 +754,13 @@ class STMPCPlanner:
         # The FTOCP has the horizon of T timesteps
 
         # Objective 1: Influence of the control inputs: Inputs u multiplied by the penalty R
-        objective += cvxpy.quad_form(cvxpy.vec(self.uk), R_block)
+        objective += cvxpy.quad_form(cvxpy.vec(self.uk), psd_wrap(R_block))
 
         # Objective 2: Deviation of the vehicle from the reference trajectory weighted by Q, including final Timestep T weighted by Qf
-        objective += cvxpy.quad_form(cvxpy.vec(self.xk - self.ref_traj_k), Q_block)
+        objective += cvxpy.quad_form(cvxpy.vec(self.xk - self.ref_traj_k), psd_wrap(Q_block))
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
-        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), Rd_block)
+        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), psd_wrap(Rd_block))
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps

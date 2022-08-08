@@ -29,7 +29,6 @@ Last Modified: 8/1/22
 
 import numpy as np
 import gym
-import time
 
 from f1tenth_planning.control.dynamic_mpc.dynamic_mpc import STMPCPlanner
 
@@ -57,7 +56,6 @@ def main():
             obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
             laptime += timestep
             env.render(mode='human')
-            # time.sleep(0.1)
         else:
             steer = 0.0
             speed = 10.0
