@@ -127,7 +127,7 @@ class STMPCPlanner:
         self.oa = None
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
-        self.degub = debug
+        self.debug = debug
 
     def plan(self, states, waypoints=None):
         """

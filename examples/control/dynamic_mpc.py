@@ -43,7 +43,7 @@ def main():
     waypoints = np.loadtxt('./levine_centerline.csv', delimiter=';', skiprows=3)
     # [x, y, yaw, v]
     mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 5]]
-    planner = STMPCPlanner(waypoints=mpc_line)
+    planner = STMPCPlanner(waypoints=mpc_line, debug=True)
 
     # create environment
     env = gym.make('f110_gym:f110-v0', map='./levine_slam', map_ext='.pgm', num_agents=1)
