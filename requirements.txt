@@ -18,3 +18,5 @@ qdldl==0.1.5.post2
 scipy==1.8.0
 scs==3.2.0
 six==1.16.0
+cvxpy==1.2.0
+-e git+https://github.com/f1tenth/f1tenth_gym.git#egg=f110_gym
