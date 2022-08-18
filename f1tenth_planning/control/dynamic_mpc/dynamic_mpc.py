@@ -145,7 +145,6 @@ class STMPCPlanner:
             speed (float): commanded vehicle longitudinal velocity
             steering_angle (float):  commanded vehicle steering angle
 
-        TODO: implement switching between different controllers here
         """
         if waypoints is not None:
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
@@ -831,7 +830,7 @@ class STMPCPlanner:
 
         # Create the optimization problem in CVXPY and setup the workspace
         # Optimization goal: minimize the objective function
-        self.MPC_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
+        self.MPC_prob_k = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
 
     def mpc_prob_solve(self, ref_traj, state_predict, x0, oa, vehicle_params):
         """
@@ -974,11 +973,11 @@ class STMPCPlanner:
 
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
-        self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
+        self.MPC_prob_k.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
 
         if (
-            self.MPC_prob.status == cvxpy.OPTIMAL
-            or self.MPC_prob.status == cvxpy.OPTIMAL_INACCURATE
+            self.MPC_prob_k.status == cvxpy.OPTIMAL
+            or self.MPC_prob_k.status == cvxpy.OPTIMAL_INACCURATE
         ):
             ox = self.get_nparray_from_matrix(self.xk.value[0, :])
             oy = self.get_nparray_from_matrix(self.xk.value[1, :])
@@ -1050,7 +1049,7 @@ class STMPCPlanner:
         :return: acceleration and delta strategy based on current information
         """
 
-        if oa is None or od is None:
+        if oa is None or od is None or oa.shape[0] > self.config.TK:
             oa = [0.0] * self.config.TK
             od = [0.0] * self.config.TK
 
