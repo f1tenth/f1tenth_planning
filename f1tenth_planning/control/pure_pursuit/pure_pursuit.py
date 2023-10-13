@@ -71,7 +71,7 @@ class PurePursuitPlanner():
             lookahead_point, i2, t2 = intersect_point(position,
                                                       lookahead_distance,
                                                       self.waypoints[:, 0:2],
-                                                      i + t,
+                                                      np.float32(i + t),
                                                       wrap=True)
             if i2 is None:
                 return None
@@ -105,6 +105,7 @@ class PurePursuitPlanner():
             if self.waypoints is None:
                 raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
         position = np.array([pose_x, pose_y])
+        lookahead_distance = np.float32(lookahead_distance)
         lookahead_point = self._get_current_waypoint(lookahead_distance,
                                                      position,
                                                      pose_theta)

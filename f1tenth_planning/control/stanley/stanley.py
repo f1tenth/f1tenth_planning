@@ -134,6 +134,7 @@ class StanleyPlanner():
         else:
             if self.waypoints is None:
                 raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
+        k_path = np.float32(k_path)
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
         steering_angle, speed = self.controller(vehicle_state, self.waypoints, k_path)
         return steering_angle, speed

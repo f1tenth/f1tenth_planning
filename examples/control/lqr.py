@@ -28,9 +28,11 @@ Last Modified: 5/5/22
 """
 
 import numpy as np
-import gym
+import f110_gym
+import gymnasium as gym
 
 from f1tenth_planning.control.lqr.lqr import LQRPlanner
+
 
 def main():
     """
@@ -38,24 +40,46 @@ def main():
     For an example using dynamic waypoints, see the lane switcher example.
     """
 
-    # loading waypoints
-    waypoints = np.loadtxt('./Spielberg_raceline.csv', delimiter=';', skiprows=0)
+    # create environment
+    env = gym.make(
+        "f110_gym:f110-v0",
+        config={
+            "map": "Spielberg",
+            "num_agents": 1,
+            "control_input": "speed",
+            "observation_config": {"type": "kinematic_state"},
+        },
+        render_mode="human",
+    )
+
+    # create planner
+    raceline = env.unwrapped.track.raceline
+    waypoints = np.stack(
+        [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws, raceline.ks], axis=1
+    )
     planner = LQRPlanner(waypoints=waypoints)
 
-    # create environment
-    env = gym.make('f110_gym:f110-v0', map='./Spielberg_map', map_ext='.png', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[0.0, -0.84, 3.40]]))
+    # reset environment
+    first_pose = np.array([raceline.xs[0], raceline.ys[0], raceline.yaws[0]])
+    obs, _ = env.reset(options={"poses": first_pose[None]})
 
+    # run simulation
     laptime = 0.0
+    done = False
     while not done:
-        steer, speed = planner.plan(obs['poses_x'][0],
-                                    obs['poses_y'][0],
-                                    obs['poses_theta'][0],
-                                    obs['linear_vels_x'][0])
-        obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
+        steer, speed = planner.plan(
+            obs["agent_0"]["pose_x"],
+            obs["agent_0"]["pose_y"],
+            obs["agent_0"]["pose_theta"],
+            obs["agent_0"]["linear_vel_x"],
+        )
+        obs, timestep, terminated, truncated, infos = env.step(
+            np.array([[steer, speed]])
+        )
         laptime += timestep
-        env.render(mode='human')
-    print('Sim elapsed time:', laptime)
+        env.render()
+    print("Sim elapsed time:", laptime)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
