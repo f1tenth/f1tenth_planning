@@ -146,6 +146,9 @@ class STMPCPlanner:
             steering_angle (float):  commanded vehicle steering angle
 
         """
+        if states["linear_vel_x"] < 0.1:
+            return 0.0, self.config.MAX_ACCEL
+
         if waypoints is not None:
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
                 raise ValueError("Waypoints needs to be a (Nxm), m >= 3, numpy array!")
@@ -156,20 +159,20 @@ class STMPCPlanner:
                     "Please set waypoints to track during planner instantiation or when calling plan()"
                 )
         vehicle_state = State(
-            x=states[0],
-            y=states[1],
-            delta=states[2],
-            v=states[3],
-            yaw=states[4],
-            yawrate=states[5],
-            beta=states[6],
+            x=states["pose_x"],
+            y=states["pose_y"],
+            delta=states["delta"],
+            v=states["linear_vel_x"],
+            yaw=states["pose_theta"],
+            yawrate=states["ang_vel_z"],
+            beta=states["beta"],
         )
 
-        if states[3] <= self.config.V_KS:
+        if states["linear_vel_x"] <= self.config.V_KS:
 
             (
-                speed,
-                steering_angle,
+                accl,
+                steering_vel,
                 mpc_ref_path_x,
                 mpc_ref_path_y,
                 mpc_pred_x,
@@ -180,8 +183,8 @@ class STMPCPlanner:
         else:
 
             (
-                speed,
-                steering_angle,
+                accl,
+                steering_vel,
                 mpc_ref_path_x,
                 mpc_ref_path_y,
                 mpc_pred_x,
@@ -190,7 +193,7 @@ class STMPCPlanner:
                 mpc_oy,
             ) = self.MPC_Control(vehicle_state, self.waypoints, self.vehicle_params)
 
-        return steering_angle, speed
+        return steering_vel, accl
 
     def calc_ref_trajectory(self, state, cx, cy, cyaw, sp):
         """
@@ -1105,16 +1108,10 @@ class STMPCPlanner:
         if self.odelta_v is not None:
             di_v, ai = self.odelta_v[0], self.oa[0]
 
-        # Create the final steer and speed parameter that need to be sent out
-
         # Steering Output: First entry of the MPC steering speed output vector in rad/s
         # The F1TENTH Gym needs steering angle has a control input: Steering speed  -> Steering Angle
-        steer_output = vehicle_state.delta + self.odelta_v[0] * self.config.DT
-
-        # Acceleration Output: First entry of the MPC acceleration output in m/s2
-        # The F1TENTH Gym needs velocity has a control input: Acceleration -> Velocity
-        # accelerate
-        speed_output = vehicle_state.v + self.oa[0] * self.config.DT
+        svel_output = self.odelta_v[0]
+        accl_output = self.oa[0]
 
         if self.debug:
             plt.cla()
@@ -1163,8 +1160,8 @@ class STMPCPlanner:
             plt.axis("equal")
 
         return (
-            speed_output,
-            steer_output,
+            accl_output,
+            svel_output,
             ref_path[0],
             ref_path[1],
             state_predict[0],
@@ -1199,12 +1196,9 @@ class STMPCPlanner:
         if self.odelta_v is not None:
             di, ai = self.odelta_v[0], self.oa[0]
 
-        # Create the final steer and speed parameter that need to be sent out
+        accl_output = self.oa[0]
+        svel_output = (self.odelta_v[0] - vehicle_state.delta) / self.config.DT
 
-        # Steering Output: First entry of the MPC steering angle output vector in degree
-        steer_output = self.odelta_v[0]
-
-        speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
 
         if self.debug:
             plt.cla()
@@ -1253,8 +1247,8 @@ class STMPCPlanner:
             plt.axis("equal")
 
         return (
-            speed_output,
-            steer_output,
+            accl_output,
+            svel_output,
             ref_path[0],
             ref_path[1],
             state_predict[0],

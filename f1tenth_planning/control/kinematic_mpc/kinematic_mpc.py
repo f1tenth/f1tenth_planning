@@ -127,6 +127,11 @@ class KMPCPlanner:
             speed (float): commanded vehicle longitudinal velocity
             steering_angle (float):  commanded vehicle steering angle
         """
+
+        if states["linear_vel_x"] < 0.1:
+            steer, accl = 0.0, self.config.MAX_ACCEL
+            return steer, accl
+
         if waypoints is not None:
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
                 raise ValueError("Waypoints needs to be a (Nxm), m >= 3, numpy array!")
@@ -137,18 +142,18 @@ class KMPCPlanner:
                     "Please set waypoints to track during planner instantiation or when calling plan()"
                 )
         vehicle_state = State(
-            x=states[0],
-            y=states[1],
-            delta=states[2],
-            v=states[3],
-            yaw=states[4],
-            yawrate=states[5],
-            beta=states[6],
+            x=states["pose_x"],
+            y=states["pose_y"],
+            delta=states["delta"],
+            v=states["linear_vel_x"],
+            yaw=states["pose_theta"],
+            yawrate=states["ang_vel_z"],
+            beta=states["beta"],
         )
 
         (
-            speed,
-            steering_angle,
+            accl,
+            svel,
             mpc_ref_path_x,
             mpc_ref_path_y,
             mpc_pred_x,
@@ -157,7 +162,7 @@ class KMPCPlanner:
             mpc_oy,
         ) = self.MPC_Control_kinematic(vehicle_state, self.waypoints)
 
-        return steering_angle, speed
+        return svel, accl
 
     def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp):
         """
@@ -500,12 +505,8 @@ class KMPCPlanner:
         if self.odelta_v is not None:
             di, ai = self.odelta_v[0], self.oa[0]
 
-        # Create the final steer and speed parameter that need to be sent out
-
-        # Steering Output: First entry of the MPC steering angle output vector in degree
-        steer_output = self.odelta_v[0]
-
-        speed_output = vehicle_state.v + self.oa[0] * self.config.DTK
+        accl_output = self.oa[0]
+        sv_output = (self.odelta_v[0] - vehicle_state.delta) / self.config.DTK
 
         if self.debug:
             plt.cla()
@@ -554,8 +555,8 @@ class KMPCPlanner:
             plt.axis("equal")
 
         return (
-            speed_output,
-            steer_output,
+            accl_output,
+            sv_output,
             ref_path[0],
             ref_path[1],
             state_predict[0],

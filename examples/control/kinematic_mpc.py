@@ -28,9 +28,11 @@ Last Modified: 8/1/22
 """
 
 import numpy as np
-import gym
+import gymnasium as gym
+import f110_gym
 
 from f1tenth_planning.control.kinematic_mpc.kinematic_mpc import KMPCPlanner
+
 
 def main():
     """
@@ -38,33 +40,39 @@ def main():
     For an example using dynamic waypoints, see the lane switcher example.
     """
 
-    # loading waypoints
-    waypoints = np.loadtxt('./levine_centerline.csv', delimiter=';', skiprows=3)
-    # [x, y, yaw, v]
-    mpc_line = [waypoints[:, 1], waypoints[:, 2], waypoints[:, 3], waypoints[:, 5]]
-    planner = KMPCPlanner(waypoints=mpc_line)
+    # create environment
+    env = gym.make('f110_gym:f110-v0',
+                   config={
+                       "map": "Spielberg",
+                       "num_agents": 1,
+                       "control_input": "accl",
+                       "observation_config": {"type": "dynamic_state"},
+                   },
+                   render_mode='human')
+
+    # create planner
+    raceline = env.unwrapped.track.centerline
+    waypoints = [raceline.xs, raceline.ys, raceline.yaws, 2.0 * raceline.vxs]
+    planner = KMPCPlanner(waypoints=waypoints, debug=False)
 
     # create environment
-    env = gym.make('f110_gym:f110-v0', map='./levine_slam', map_ext='.pgm', num_agents=1)
-    obs, _, done, _ = env.reset(np.array([[2.51, 3.29, 1.58]]))
+    idx = np.random.randint(0, len(raceline.xs))
+    first_pose = np.array([raceline.xs[idx], raceline.ys[idx], raceline.yaws[idx]])
+    obs, infos = env.reset(options={"poses": first_pose[None]})
 
     laptime = 0.0
-    up_to_speed = False
+    done = False
     while not done:
-        if up_to_speed:
-            steer, speed = planner.plan(env.sim.agents[0].state)
-            obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
-            laptime += timestep
-            env.render(mode='human')
-        else:
-            steer = 0.0
-            speed = 10.0
-            obs, timestep, done, _ = env.step(np.array([[steer, speed]]))
-            laptime += timestep
-            env.render(mode='human')
-            if obs['linear_vels_x'][0] > 0.1:
-                up_to_speed = True
+        steerv, accl = planner.plan(obs["agent_0"])
+        obs, timestep, terminated, truncated, infos = env.step(np.array([[steerv, accl]]))
+        done = terminated or truncated
+        laptime += timestep
+        env.render()
+
+        print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
+
     print('Sim elapsed time:', laptime)
+
 
 if __name__ == '__main__':
     main()
