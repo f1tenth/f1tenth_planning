@@ -28,8 +28,8 @@ Last Modified: 5/5/22
 """
 
 import numpy as np
-import f110_gym
 import gymnasium as gym
+import f110_gym
 
 from f1tenth_planning.control.lqr.lqr import LQRPlanner
 

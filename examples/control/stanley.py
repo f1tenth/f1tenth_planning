@@ -28,8 +28,8 @@ Last Modified: 5/4/22
 """
 
 import numpy as np
-import f110_gym
 import gymnasium as gym
+import f110_gym
 
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
