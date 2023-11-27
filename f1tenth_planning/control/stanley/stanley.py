@@ -30,6 +30,7 @@ Last Modified: 5/1/22
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import pi_2_pi
+from pyglet.gl import GL_POINTS
 
 import numpy as np
 import math
@@ -53,6 +54,31 @@ class StanleyPlanner():
     def __init__(self, wheelbase=0.33, waypoints=None):
         self.wheelbase = wheelbase
         self.waypoints = waypoints
+        self.drawn_waypoints = []
+
+    def render_waypoints(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        points = self.waypoints[:, :2]
+        scaled_points = 50.0 * points
+
+        for i in range(points.shape[0]):
+            if len(self.drawn_waypoints) < points.shape[0]:
+                b = e.batch.add(
+                    1,
+                    GL_POINTS,
+                    None,
+                    ("v3f/stream", [scaled_points[i, 0], scaled_points[i, 1], 0.0]),
+                    ("c3B/stream", [183, 193, 222]),
+                )
+                self.drawn_waypoints.append(b)
+            else:
+                self.drawn_waypoints[i].vertices = [
+                    scaled_points[i, 0],
+                    scaled_points[i, 1],
+                    0.0,
+                ]
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
