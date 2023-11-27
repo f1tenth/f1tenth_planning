@@ -77,7 +77,7 @@ def main():
 
     env.add_render_callback(render_callback)
     
-    # create environment
+    # reset environment
     poses = np.array(
         [
             [

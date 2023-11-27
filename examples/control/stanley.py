@@ -54,7 +54,7 @@ def main():
         render_mode="human",
     )
 
-    # create planner
+    # reset environment
     raceline = env.unwrapped.track.raceline
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
     planner = StanleyPlanner(waypoints=waypoints)
