@@ -35,6 +35,7 @@ import numpy as np
 from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
+from pyglet.gl import GL_POINTS
 
 
 @dataclass
@@ -95,14 +96,16 @@ class KMPCPlanner:
 
     def __init__(
         self,
-        waypoints=None,
+        track,
         config=mpc_config(),
         params=np.array(
             [3.74, 0.15875, 0.17145, 0.074, 4.718, 5.4562, 0.04712, 1.0489]
         ),
         debug=False,
     ):
-        self.waypoints = waypoints
+        self.waypoints = np.stack(
+            [track.raceline.xs, track.raceline.ys, track.raceline.vxs]
+        ).T
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None
@@ -111,6 +114,33 @@ class KMPCPlanner:
         self.init_flag = 0
         self.debug = debug
         self.mpc_prob_init_kinematic()
+
+        self.drawn_waypoints = []
+
+    def render_waypoints(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        points = self.waypoints[:, :2]
+
+        scaled_points = 50.0 * points
+
+        for i in range(points.shape[0]):
+            if len(self.drawn_waypoints) < points.shape[0]:
+                b = e.batch.add(
+                    1,
+                    GL_POINTS,
+                    None,
+                    ("v3f/stream", [scaled_points[i, 0], scaled_points[i, 1], 0.0]),
+                    ("c3B/stream", [183, 193, 222]),
+                )
+                self.drawn_waypoints.append(b)
+            else:
+                self.drawn_waypoints[i].vertices = [
+                    scaled_points[i, 0],
+                    scaled_points[i, 1],
+                    0.0,
+                ]
 
     def plan(self, states, waypoints=None):
         """
@@ -268,7 +298,7 @@ class KMPCPlanner:
         A[0, 3] = -self.config.DTK * v * math.sin(phi)
         A[1, 2] = self.config.DTK * math.sin(phi)
         A[1, 3] = self.config.DTK * v * math.cos(phi)
-        A[3, 2] = self.config.DTK * math.tan(delta) / self.config.WB
+        A[2, 3] = self.config.DTK * math.tan(delta) / self.config.WB
 
         # Input Matrix B; 4x2
         B = np.zeros((self.config.NXK, self.config.NU))
