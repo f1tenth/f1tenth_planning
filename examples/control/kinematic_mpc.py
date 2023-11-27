@@ -75,6 +75,7 @@ def main():
 
     # create planner
     planner = KMPCPlanner(track=env.track, debug=False)
+    planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
 
     # create environment
     poses = np.array(

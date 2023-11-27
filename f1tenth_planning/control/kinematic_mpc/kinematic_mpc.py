@@ -103,9 +103,7 @@ class KMPCPlanner:
         ),
         debug=False,
     ):
-        self.waypoints = np.stack(
-            [track.raceline.xs, track.raceline.ys, track.raceline.vxs]
-        ).T
+        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None
@@ -121,7 +119,7 @@ class KMPCPlanner:
         """
         update waypoints being drawn by EnvRenderer
         """
-        points = self.waypoints[:, :2]
+        points = (np.array(self.waypoints)[:2, :]).T
 
         scaled_points = 50.0 * points
 
