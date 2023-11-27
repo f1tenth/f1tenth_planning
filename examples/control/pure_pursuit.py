@@ -30,8 +30,9 @@ Last Modified: 5/4/22
 import numpy as np
 import gymnasium as gym
 import f110_gym
-
-
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
 
 
@@ -56,9 +57,37 @@ def main():
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
     planner = PurePursuitPlanner(waypoints=waypoints)
 
-    # reset environment
-    first_pose = np.array([raceline.xs[0], raceline.ys[0], raceline.yaws[0]])
-    obs, _ = env.reset(options={"poses": first_pose[None]})
+    def render_callback(env_renderer):
+        # custom extra drawing function
+
+        e = env_renderer
+
+        # update camera to follow car
+        x = e.cars[0].vertices[::2]
+        y = e.cars[0].vertices[1::2]
+        top, bottom, left, right = max(y), min(y), min(x), max(x)
+        e.score_label.x = left
+        e.score_label.y = top - 700
+        e.left = left - 800
+        e.right = right + 800
+        e.top = top + 800
+        e.bottom = bottom - 800
+
+        planner.render_waypoints(env_renderer)
+
+    env.add_render_callback(render_callback)
+    
+    # create environment
+    poses = np.array(
+        [
+            [
+                env.track.raceline.xs[0],
+                env.track.raceline.ys[0],
+                env.track.raceline.yaws[0],
+            ]
+        ]
+    )
+    obs, info = env.reset(options={"poses": poses})
 
     # run simulation
     laptime = 0.0
