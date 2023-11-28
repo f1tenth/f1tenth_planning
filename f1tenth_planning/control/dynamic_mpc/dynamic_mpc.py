@@ -36,6 +36,7 @@ from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
+from pyglet.gl import GL_POINTS
 
 
 @dataclass
@@ -46,16 +47,16 @@ class mpc_config:
     T: int = 40  # finite time horizon length
     TK: int = 8  # finite time horizon length kinematic
     R: list = field(
-        default_factory=lambda: diags([0.5, 0.01])
+        default_factory=lambda: diags([0.5, 4.0])
     )  # input cost matrix, penalty for inputs - [steering_speed, accel]
     Rd: list = field(
-        default_factory=lambda: diags([0.3, 0.01])
+        default_factory=lambda: diags([0.3, 4.0])
     )  # input difference cost matrix, penalty for change of inputs - [steering_speed, accel]
     Q: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([18.5, 18.5, 0.0, 1.5, 0.0, 0.0, 0.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
     Qf: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([18.5, 18.5, 0.0, 1.5, 0.0, 0.0, 0.0])
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     Rk: list = field(
         default_factory=lambda: np.diag([0.01, 100.0])
@@ -64,11 +65,11 @@ class mpc_config:
         default_factory=lambda: np.diag([0.01, 100.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
-    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
+        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
+    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, v, yaw]
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
-    )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
+        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
+    )  # final state error matrix, penalty  for the final state constraints: [x, y, v, yaw]
     N_IND_SEARCH: int = 20  # Search index number
     DT: float = 0.025  # time step [s]
     DTK: float = 0.1  # time step [s] kinematic
@@ -114,14 +115,15 @@ class STMPCPlanner:
 
     def __init__(
         self,
-        waypoints=None,
+        track,
         config=mpc_config(),
         params=np.array(
             [3.74, 0.15875, 0.17145, 0.074, 4.718, 5.4562, 0.04712, 1.0489]
         ),
         debug=False,
     ):
-        self.waypoints = waypoints
+        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+        self.waypoints_distances = track.raceline.ss
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None
@@ -129,6 +131,33 @@ class STMPCPlanner:
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
         self.debug = debug
+
+        self.drawn_waypoints = []
+
+    def render_waypoints(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        points = (np.array(self.waypoints)[:2, :]).T
+
+        scaled_points = 50.0 * points
+
+        for i in range(points.shape[0]):
+            if len(self.drawn_waypoints) < points.shape[0]:
+                b = e.batch.add(
+                    1,
+                    GL_POINTS,
+                    None,
+                    ("v3f/stream", [scaled_points[i, 0], scaled_points[i, 1], 0.0]),
+                    ("c3B/stream", [183, 193, 222]),
+                )
+                self.drawn_waypoints.append(b)
+            else:
+                self.drawn_waypoints[i].vertices = [
+                    scaled_points[i, 0],
+                    scaled_points[i, 1],
+                    0.0,
+                ]
 
     def plan(self, states, waypoints=None):
         """
@@ -195,9 +224,9 @@ class STMPCPlanner:
 
         return steering_vel, accl
 
-    def calc_ref_trajectory(self, state, cx, cy, cyaw, sp):
+    def calc_ref_trajectory(self, state : State, cx, cy, cyaw, sp):
         """
-        calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
+        calc referent trajectory ref_traj in T steps: [x, y, delta, v, yaw, yaw rate, beta]
         using the current velocity, calc the T points along the reference path
         :param cx: Course X-Position
         :param cy: Course y-Position
@@ -237,7 +266,7 @@ class STMPCPlanner:
 
         return ref_traj
 
-    def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp):
+    def calc_ref_trajectory_kinematic(self, state : State, cx, cy, cyaw, sp):
         """
         calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
         using the current velocity, calc the T points along the reference path

@@ -29,8 +29,11 @@ Last Modified: 8/1/22
 
 import numpy as np
 import gymnasium as gym
-import f110_gym
-
+from f110_gym.envs import F110Env
+import time
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
 from f1tenth_planning.control.dynamic_mpc.dynamic_mpc import STMPCPlanner
 
 def main():
@@ -40,25 +43,56 @@ def main():
     """
 
     # create environment
-    env = gym.make('f110_gym:f110-v0',
-                   config={
-                       "map": "Spielberg",
-                       "num_agents": 1,
-                       "control_input": "accl",
-                       "observation_config": {"type": "dynamic_state"},
-                   },
-                   render_mode='human')
+    env: F110Env = gym.make('f110_gym:f110-v0',
+                            config={
+                                "map": "Spielberg",
+                                "num_agents": 1,
+                                "control_input": "accl",
+                                "observation_config": {"type": "dynamic_state"},
+                            },
+                            render_mode='human')
+
+    def render_callback(env_renderer):
+        # custom extra drawing function
+
+        e = env_renderer
+
+        # update camera to follow car
+        x = e.cars[0].vertices[::2]
+        y = e.cars[0].vertices[1::2]
+        top, bottom, left, right = max(y), min(y), min(x), max(x)
+        e.score_label.x = left
+        e.score_label.y = top - 700
+        e.left = left - 800
+        e.right = right + 800
+        e.top = top + 800
+        e.bottom = bottom - 800
+
+        planner.render_waypoints(env_renderer)
+
+    env.add_render_callback(render_callback)
 
     # create planner
-    raceline = env.unwrapped.track.centerline
-    waypoints = [raceline.xs, raceline.ys, raceline.yaws, 2.0 * raceline.vxs]
-    planner = STMPCPlanner(waypoints=waypoints, debug=True)
+    planner = STMPCPlanner(track=env.track, debug=False)
+    planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing - kinematic
+    planner.config.dl = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
 
-    first_pose = np.array([raceline.xs[0], raceline.ys[0], raceline.yaws[0]])
-    obs, infos = env.reset(options={"poses": first_pose[None]})
+    # reset environment
+    poses = np.array(
+        [
+            [
+                env.track.raceline.xs[0],
+                env.track.raceline.ys[0],
+                env.track.raceline.yaws[0],
+            ]
+        ]
+    )
+    obs, info = env.reset(options={"poses": poses})
     done = False
+    env.render()
 
     laptime = 0.0
+    start = time.time()
     while not done:
         steerv, accl = planner.plan(obs["agent_0"])
         obs, timestep, terminated, truncated, info = env.step(np.array([[steerv, accl]]))
@@ -66,7 +100,9 @@ def main():
         laptime += timestep
         env.render()
 
-    print('Sim elapsed time:', laptime)
+        print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
+
+    print("Sim elapsed time:", laptime, "Real elapsed time:", time.time() - start)
 
 if __name__ == '__main__':
     main()
