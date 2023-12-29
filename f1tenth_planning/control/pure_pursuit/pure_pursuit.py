@@ -34,7 +34,6 @@ from f1tenth_planning.utils.utils import get_actuation
 import numpy as np
 import warnings
 
-from pyglet.gl import GL_POINTS
 class PurePursuitPlanner():
     """
     Pure pursuit tracking controller
@@ -57,27 +56,10 @@ class PurePursuitPlanner():
 
     def render_waypoints(self, e):
         """
-        update waypoints being drawn by EnvRenderer
+        Callback to render waypoints.
         """
         points = self.waypoints[:, :2]
-        scaled_points = 50.0 * points
-
-        for i in range(points.shape[0]):
-            if len(self.drawn_waypoints) < points.shape[0]:
-                b = e.batch.add(
-                    1,
-                    GL_POINTS,
-                    None,
-                    ("v3f/stream", [scaled_points[i, 0], scaled_points[i, 1], 0.0]),
-                    ("c3B/stream", [183, 193, 222]),
-                )
-                self.drawn_waypoints.append(b)
-            else:
-                self.drawn_waypoints[i].vertices = [
-                    scaled_points[i, 0],
-                    scaled_points[i, 1],
-                    0.0,
-                ]
+        e.render_closed_lines(points, color=(128, 0, 0), size=1)
 
     def _get_current_waypoint(self, lookahead_distance, position, theta):
         """

@@ -31,9 +31,7 @@ import numpy as np
 import gymnasium as gym
 from f110_gym.envs import F110Env
 import time
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
+
 from f1tenth_planning.control.dynamic_mpc.dynamic_mpc import STMPCPlanner
 
 def main():
@@ -52,30 +50,13 @@ def main():
                             },
                             render_mode='human')
 
-    def render_callback(env_renderer):
-        # custom extra drawing function
-
-        e = env_renderer
-
-        # update camera to follow car
-        x = e.cars[0].vertices[::2]
-        y = e.cars[0].vertices[1::2]
-        top, bottom, left, right = max(y), min(y), min(x), max(x)
-        e.score_label.x = left
-        e.score_label.y = top - 700
-        e.left = left - 800
-        e.right = right + 800
-        e.top = top + 800
-        e.bottom = bottom - 800
-
-        planner.render_waypoints(env_renderer)
-
-    env.add_render_callback(render_callback)
 
     # create planner
     planner = STMPCPlanner(track=env.track, debug=False)
     planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing - kinematic
     planner.config.dl = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
+
+    env.add_render_callback(planner.render_waypoints)
 
     # reset environment
     poses = np.array(

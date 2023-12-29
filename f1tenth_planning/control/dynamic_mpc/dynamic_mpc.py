@@ -32,11 +32,10 @@ from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 import cvxpy
 import numpy as np
-from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
+from f1tenth_planning.utils.utils import nearest_point
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
-from pyglet.gl import GL_POINTS
 
 
 @dataclass
@@ -136,28 +135,10 @@ class STMPCPlanner:
 
     def render_waypoints(self, e):
         """
-        update waypoints being drawn by EnvRenderer
+        Callback to render waypoints.
         """
-        points = (np.array(self.waypoints)[:2, :]).T
-
-        scaled_points = 50.0 * points
-
-        for i in range(points.shape[0]):
-            if len(self.drawn_waypoints) < points.shape[0]:
-                b = e.batch.add(
-                    1,
-                    GL_POINTS,
-                    None,
-                    ("v3f/stream", [scaled_points[i, 0], scaled_points[i, 1], 0.0]),
-                    ("c3B/stream", [183, 193, 222]),
-                )
-                self.drawn_waypoints.append(b)
-            else:
-                self.drawn_waypoints[i].vertices = [
-                    scaled_points[i, 0],
-                    scaled_points[i, 1],
-                    0.0,
-                ]
+        points = np.array(self.waypoints[:2]).T
+        e.render_closed_lines(points, color=(128, 0, 0), size=1)
 
     def plan(self, states, waypoints=None):
         """

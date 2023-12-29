@@ -30,9 +30,6 @@ Last Modified: 5/4/22
 import numpy as np
 import gymnasium as gym
 import f110_gym
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
@@ -59,25 +56,9 @@ def main():
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
     planner = StanleyPlanner(waypoints=waypoints)
 
-    def render_callback(env_renderer):
-        # custom extra drawing function
 
-        e = env_renderer
 
-        # update camera to follow car
-        x = e.cars[0].vertices[::2]
-        y = e.cars[0].vertices[1::2]
-        top, bottom, left, right = max(y), min(y), min(x), max(x)
-        e.score_label.x = left
-        e.score_label.y = top - 700
-        e.left = left - 800
-        e.right = right + 800
-        e.top = top + 800
-        e.bottom = bottom - 800
-
-        planner.render_waypoints(env_renderer)
-
-    env.add_render_callback(render_callback)
+    env.add_render_callback(planner.render_waypoints)
     
     # create environment
     poses = np.array(
