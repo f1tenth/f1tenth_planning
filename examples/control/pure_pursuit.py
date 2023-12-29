@@ -51,9 +51,8 @@ def main():
                    render_mode='human')
 
     # create planner
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
-    planner = PurePursuitPlanner(waypoints=waypoints)
+    track = env.unwrapped.track
+    planner = PurePursuitPlanner(track=track, params={"lookahead_distance": 0.8})
 
 
     env.add_render_callback(planner.render_waypoints)
@@ -75,11 +74,8 @@ def main():
     # run simulation
     laptime = 0.0
     while not done:
-        steer, speed = planner.plan(obs["agent_0"]['pose_x'],
-                                    obs["agent_0"]['pose_y'],
-                                    obs["agent_0"]['pose_theta'],
-                                    lookahead_distance=0.8)
-        obs, timestep, terminated, truncated, infos = env.step(np.array([[steer, speed]]))
+        action = planner.plan(obs["agent_0"])
+        obs, timestep, terminated, truncated, infos = env.step(np.array([action]))
         done = terminated or truncated
         laptime += timestep
         env.render()

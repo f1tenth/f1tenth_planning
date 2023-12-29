@@ -27,7 +27,9 @@ Implementation inspired by https://github.com/AtsushiSakai/PythonRobotics/blob/m
 Author: Hongrui Zheng, Johannes Betz, Atsushi Sakai
 Last Modified: 5/5/22
 """
+from f110_gym.envs.track import Track
 
+from f1tenth_planning.control.controller import Controller
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
 from f1tenth_planning.utils.utils import solve_lqr
@@ -36,34 +38,45 @@ from f1tenth_planning.utils.utils import pi_2_pi
 import numpy as np
 import math
 
-class LQRPlanner():
+
+class LQRPlanner(Controller):
     """
     Lateral Controller using LQR
 
     Args:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 5], optional, default=None): waypoints to track, columns are [x, y, velocity, heading, curvature]
-
-    Attributes:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 5], optional, default=None): waypoints to track, columns are [x, y, velocity, heading, curvature]
-        vehicle_control_e_cog (float): lateral error of cog to ref trajectory
-        vehicle_control_theta_e (float): yaw error to ref trajectory
+        track (Track): track object with raceline
+        params (dict, optional): dictionary of parameters, including wheelbase, matrix Q, matrix R, ...
     """
 
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.wheelbase = 0.33
-        self.waypoints = waypoints
-        self.vehicle_control_e_cog = 0       # e_cg: lateral error of CoG to ref trajectory
-        self.vehicle_control_theta_e = 0     # theta_e: yaw error to ref trajectory
-        self.drawn_waypoints = []
+    def __init__(self, track: Track, params: dict = None):
+        self.params = {
+            "wheelbase": 0.33,
+            "timestep": 0.01,
+            "matrix_q_1": 0.999,
+            "matrix_q_2": 0.0,
+            "matrix_q_3": 0.0066,
+            "matrix_q_4": 0.0,
+            "matrix_r": 0.75,
+            "iterations": 50,
+            "eps": 0.001,
+            "vgain": 1.0,
+        }
+        self.params.update(params or {})
 
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+        self.waypoints = np.stack(
+            [
+                track.raceline.xs,
+                track.raceline.ys,
+                track.raceline.vxs,
+                track.raceline.yaws,
+                track.raceline.ks,
+            ],
+            axis=1,
+        )
+
+        self.vehicle_control_e_cog = 0  # e_cg: lateral error of CoG to ref trajectory
+        self.vehicle_control_theta_e = 0  # theta_e: yaw error to ref trajectory
+        self.drawn_waypoints = []
 
     def calc_control_points(self, vehicle_state, waypoints):
         """
@@ -81,15 +94,21 @@ class LQRPlanner():
         """
 
         # distance to the closest point to the front axle center
-        fx = vehicle_state[0] + self.wheelbase * math.cos(vehicle_state[2])
-        fy = vehicle_state[1] + self.wheelbase * math.sin(vehicle_state[2])
+        fx = vehicle_state[0] + self.params["wheelbase"] * math.cos(vehicle_state[2])
+        fy = vehicle_state[1] + self.params["wheelbase"] * math.sin(vehicle_state[2])
         position_front_axle = np.array([fx, fy])
-        nearest_point_front, nearest_dist, t, target_index = nearest_point(position_front_axle, self.waypoints[:, 0:2])
+        nearest_point_front, nearest_dist, t, target_index = nearest_point(
+            position_front_axle, self.waypoints[:, 0:2]
+        )
         vec_dist_nearest_point = position_front_axle - nearest_point_front
 
         # crosstrack error
-        front_axle_vec_rot_90 = np.array([[math.cos(vehicle_state[2] - math.pi / 2.0)],
-                                          [math.sin(vehicle_state[2] - math.pi / 2.0)]])
+        front_axle_vec_rot_90 = np.array(
+            [
+                [math.cos(vehicle_state[2] - math.pi / 2.0)],
+                [math.sin(vehicle_state[2] - math.pi / 2.0)],
+            ]
+        )
         ef = np.dot(vec_dist_nearest_point.T, front_axle_vec_rot_90)
 
         # heading error
@@ -109,7 +128,9 @@ class LQRPlanner():
 
         return theta_e, ef[0], theta_raceline, kappa_ref, goal_veloctiy
 
-    def controller(self, vehicle_state, waypoints, ts, matrix_q, matrix_r, max_iteration, eps):
+    def controller(
+        self, vehicle_state, waypoints, ts, matrix_q, matrix_r, max_iteration, eps
+    ):
         """
         Compute lateral control command.
 
@@ -135,16 +156,22 @@ class LQRPlanner():
         theta_e_old = self.vehicle_control_theta_e
 
         # Calculating current errors and reference points from reference trajectory
-        theta_e, e_cg, yaw_ref, k_ref, v_ref = self.calc_control_points(vehicle_state, waypoints)
+        theta_e, e_cg, yaw_ref, k_ref, v_ref = self.calc_control_points(
+            vehicle_state, waypoints
+        )
 
-        #Update the calculation matrix based on the current vehicle state
-        matrix_ad_, matrix_bd_ = update_matrix(vehicle_state, state_size, ts, self.wheelbase)
+        # Update the calculation matrix based on the current vehicle state
+        matrix_ad_, matrix_bd_ = update_matrix(
+            vehicle_state, state_size, ts, self.params["wheelbase"]
+        )
 
         matrix_state_ = np.zeros((state_size, 1))
         matrix_r_ = np.diag(matrix_r)
         matrix_q_ = np.diag(matrix_q)
 
-        matrix_k_ = solve_lqr(matrix_ad_, matrix_bd_, matrix_q_, matrix_r_, eps, max_iteration)
+        matrix_k_ = solve_lqr(
+            matrix_ad_, matrix_bd_, matrix_q_, matrix_r_, eps, max_iteration
+        )
 
         matrix_state_[0][0] = e_cg
         matrix_state_[1][0] = (e_cg - e_cog_old) / ts
@@ -153,66 +180,55 @@ class LQRPlanner():
 
         steer_angle_feedback = (matrix_k_ @ matrix_state_)[0][0]
 
-        #Compute feed forward control term to decrease the steady error.
-        steer_angle_feedforward = k_ref * self.wheelbase
+        # Compute feed forward control term to decrease the steady error.
+        steer_angle_feedforward = k_ref * self.params["wheelbase"]
 
         # Calculate final steering angle in [rad]
         steer_angle = steer_angle_feedback + steer_angle_feedforward
 
         return steer_angle, v_ref
 
-    def plan(self,
-             pose_x,
-             pose_y,
-             pose_theta,
-             velocity,
-             timestep=0.01,
-             matrix_q_1=0.999,
-             matrix_q_2=0.0,
-             matrix_q_3=0.0066,
-             matrix_q_4=0.0,
-             matrix_r=0.75,
-             iterations=50,
-             eps=0.001,
-             waypoints=None):
+    def plan(self, state: dict) -> np.ndarray:
         """
-        Compute lateral control command.
+        Plan function for the LQR lateral controller.
 
         Args:
-            pose_x (float):
-            pose_y (float):
-            pose_theta (float):
-            velocity (float):
-            timestep (float, optional, default=0.01):
-            matrix_q_1 (float, optional, default=1.0):
-            matrix_q_2 (float, optional, default=0.95):
-            matrix_q_3 (float, optional, default=0.0066):
-            matrix_q_4 (float, optional, default=0.0257):
-            matrix_r (float, optional, default=0.0062):
-            iterations (int, optional, default=50):
-            eps (float, optional, default=0.01):
-            waypoints (numpy.ndarray [N x 5], optional, default=None):
+            state (dict): current state of the vehicle, keys: ['pose_x', 'pose_y', 'pose_theta', 'linear_vel_x']
 
         Returns:
-            steering_angle (float): desired steering angle
-            speed (float): desired speed
+            action (np.ndarray): action to execute on the vehicle, [steering_angle, speed]
         """
-        if waypoints is not None:
-            if waypoints.shape[1] < 5 or len(waypoints.shape) != 2:
-                raise ValueError('Waypoints needs to be a (Nxm), m >= 5, numpy array!')
-            self.waypoints = waypoints
-        else:
-            if self.waypoints is None:
-                raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
+        assert self.waypoints is not None, "waypoints are not set"
 
-        #Define LQR Matrix and Parameter
-        matrix_q = [matrix_q_1, matrix_q_2, matrix_q_3, matrix_q_4]
-        matrix_r = [matrix_r]
+        # Define LQR Matrix and Parameter
+        matrix_q = [
+            self.params["matrix_q_1"],
+            self.params["matrix_q_2"],
+            self.params["matrix_q_3"],
+            self.params["matrix_q_4"],
+        ]
+        matrix_r = [self.params["matrix_r"]]
 
-        #Define a numpy array that includes the current vehicle state: x,y, theta, veloctiy
-        vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
+        timestep = self.params["timestep"]
+        iterations = self.params["iterations"]
+        eps = self.params["eps"]
 
-        #Calculate the steering angle and the speed in the controller
-        steering_angle, speed = self.controller(vehicle_state, self.waypoints, timestep, matrix_q, matrix_r, iterations, eps)
+        # Define a numpy array that includes the current vehicle state: x,y, theta, veloctiy
+        vehicle_state = np.array(
+            [
+                state["pose_x"],
+                state["pose_y"],
+                state["pose_theta"],
+                state["linear_vel_x"],
+            ]
+        )
 
-        return steering_angle, speed
+        # Calculate the steering angle and the speed in the controller
+        steering_angle, speed = self.controller(
+            vehicle_state, self.waypoints, timestep, matrix_q, matrix_r, iterations, eps
+        )
+
+        # scale speed according to the velocity gain
+        speed = speed * self.params["vgain"]
+
+        return np.array([steering_angle, speed])

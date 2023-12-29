@@ -29,7 +29,6 @@ Last Modified: 5/4/22
 
 import numpy as np
 import gymnasium as gym
-import f110_gym
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
@@ -52,9 +51,8 @@ def main():
     )
 
     # reset environment
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
-    planner = StanleyPlanner(waypoints=waypoints)
+    track = env.unwrapped.track
+    planner = StanleyPlanner(track=track)
 
 
     env.add_render_callback(planner.render_waypoints)
@@ -76,17 +74,8 @@ def main():
     # run simulation
     laptime = 0.0
     while not done:
-        steer, speed = planner.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            obs["agent_0"]["linear_vel_x"],
-            k_path=7.0,
-        )
-        speed = 0.7 * speed
-        obs, timestep, terminated, truncated, infos = env.step(
-            np.array([[steer, speed]])
-        )
+        action = planner.plan(state=obs["agent_0"])
+        obs, timestep, terminated, truncated, infos = env.step(np.array([action]))
         done = terminated or truncated
         laptime += timestep
         env.render()

@@ -26,7 +26,9 @@ Pure Pursuit waypoint tracker
 Author: Hongrui Zheng
 Last Modified: 5/4/22
 """
+from f110_gym.envs.track import Track
 
+from f1tenth_planning.control.controller import Controller
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_actuation
@@ -34,7 +36,8 @@ from f1tenth_planning.utils.utils import get_actuation
 import numpy as np
 import warnings
 
-class PurePursuitPlanner():
+
+class PurePursuitPlanner(Controller):
     """
     Pure pursuit tracking controller
     Reference: Coulter 1992, https://www.ri.cmu.edu/pub_files/pub3/coulter_r_craig_1992_1/coulter_r_craig_1992_1.pdf
@@ -42,24 +45,20 @@ class PurePursuitPlanner():
     All vehicle pose used by the planner should be in the map frame.
 
     Args:
-        waypoints (numpy.ndarray [N x 4], optional): static waypoints to track
-
-    Attributes:
-        max_reacquire (float): maximum radius (meters) for reacquiring current waypoints
-        waypoints (numpy.ndarray [N x 4]): static list of waypoints, columns are [x, y, velocity, heading]
+        track (Track): track object with raceline
+        params (dict, optional): dictionary of parameters, including wheelbase, lookahead dist, ...
     """
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.max_reacquire = 20.
-        self.wheelbase = wheelbase
-        self.waypoints = waypoints
-        self.drawn_waypoints = []
 
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+    def __init__(self, track: Track, params: dict = None):
+        self.params = {
+            "wheelbase": 0.33,
+            "max_reacquire": 20.0,
+            "lookahead_distance": 1.0,
+            "vgain": 1.0,
+        }
+        self.params.update(params or {})
+
+        self.waypoints = np.stack([track.raceline.xs, track.raceline.ys, track.raceline.vxs], axis=1)
 
     def _get_current_waypoint(self, lookahead_distance, position, theta):
         """
@@ -76,56 +75,57 @@ class PurePursuitPlanner():
 
         nearest_p, nearest_dist, t, i = nearest_point(position, self.waypoints[:, 0:2])
         if nearest_dist < lookahead_distance:
-            lookahead_point, i2, t2 = intersect_point(position,
-                                                      lookahead_distance,
-                                                      self.waypoints[:, 0:2],
-                                                      np.float32(i + t),
-                                                      wrap=True)
+            lookahead_point, i2, t2 = intersect_point(
+                position,
+                lookahead_distance,
+                self.waypoints[:, 0:2],
+                np.float32(i + t),
+                wrap=True,
+            )
             if i2 is None:
                 return None
-            current_waypoint = np.array([self.waypoints[i2, 0], self.waypoints[i2, 1], self.waypoints[i, 2]])
+            current_waypoint = np.array(
+                [self.waypoints[i2, 0], self.waypoints[i2, 1], self.waypoints[i, 2]]
+            )
             return current_waypoint
-        elif nearest_dist < self.max_reacquire:
+        elif nearest_dist < self.params["max_reacquire"]:
             return self.waypoints[i, :]
         else:
             return None
 
-    def plan(self, pose_x, pose_y, pose_theta, lookahead_distance, waypoints=None):
+    def plan(self, state: dict) -> np.ndarray:
         """
-        Planner plan function overload for Pure Pursuit, returns acutation based on current state
+        Planner plan function overload for Pure Pursuit, returns actuation.
 
         Args:
-            pose_x (float): current vehicle x position
-            pose_y (float): current vehicle y position
-            pose_theta (float): current vehicle heading angle
-            lookahead_distance (float): lookahead distance to find next waypoint to track
-            waypoints (numpy.ndarray [N x 4], optional): list of dynamic waypoints to track, columns are [x, y, velocity, heading]
+            state (dict): current vehicle state, keys are ["pose_x", "pose_y", "pose_theta", "velocity"]
 
         Returns:
-            speed (float): commanded vehicle longitudinal velocity
-            steering_angle (float):  commanded vehicle steering angle
+            actuation (numpy.ndarray (2, )): actuation command (steering angle, speed)
         """
-        if waypoints is not None:
-            if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
-                raise ValueError('Waypoints needs to be a (Nxm), m >= 3, numpy array!')
-            self.waypoints = waypoints
-        else:
-            if self.waypoints is None:
-                raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
+        assert self.waypoints is not None, "waypoints are not set"
+
+        pose_x, pose_y, pose_theta = state["pose_x"], state["pose_y"], state["pose_theta"]
         position = np.array([pose_x, pose_y])
-        lookahead_distance = np.float32(lookahead_distance)
-        lookahead_point = self._get_current_waypoint(lookahead_distance,
-                                                     position,
-                                                     pose_theta)
+
+        lookahead_distance = np.float32(self.params["lookahead_distance"])
+        lookahead_point = self._get_current_waypoint(
+            lookahead_distance, position, pose_theta
+        )
 
         if lookahead_point is None:
-            warnings.warn('Cannot find lookahead point, stopping...')
-            return 0.0, 0.0
+            warnings.warn("Cannot find lookahead point, stopping...")
+            return np.zeros(2)
 
-        speed, steering_angle = get_actuation(pose_theta,
-                                              lookahead_point,
-                                              position,
-                                              lookahead_distance,
-                                              self.wheelbase)
+        speed, steering_angle = get_actuation(
+            pose_theta,
+            lookahead_point,
+            position,
+            lookahead_distance,
+            self.params["wheelbase"],
+        )
 
-        return steering_angle, speed
+        # scale speed according to the velocity gain
+        speed = speed * self.params["vgain"]
+
+        return np.array([steering_angle, speed])
