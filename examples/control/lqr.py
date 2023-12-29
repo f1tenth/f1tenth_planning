@@ -72,10 +72,11 @@ def main():
         ]
     )
     obs, info = env.reset(options={"poses": poses})
+    done = False
+    env.render()
 
     # run simulation
     laptime = 0.0
-    done = False
     while not done:
         steer, speed = planner.plan(
             obs["agent_0"]["pose_x"],
@@ -86,6 +87,7 @@ def main():
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
+        done = terminated or truncated
         laptime += timestep
         env.render()
     print("Sim elapsed time:", laptime)

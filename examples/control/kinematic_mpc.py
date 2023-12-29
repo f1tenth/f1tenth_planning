@@ -58,7 +58,7 @@ def main():
     env.add_render_callback(planner.render_waypoints)
 
 
-    # create environment
+    # reset environment
     poses = np.array(
         [
             [

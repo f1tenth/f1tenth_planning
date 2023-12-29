@@ -57,10 +57,9 @@ def main():
     planner = StanleyPlanner(waypoints=waypoints)
 
 
-
     env.add_render_callback(planner.render_waypoints)
     
-    # create environment
+    # reset environment
     poses = np.array(
         [
             [
@@ -76,7 +75,6 @@ def main():
 
     # run simulation
     laptime = 0.0
-    done = False
     while not done:
         steer, speed = planner.plan(
             obs["agent_0"]["pose_x"],
@@ -89,6 +87,7 @@ def main():
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
+        done = terminated or truncated
         laptime += timestep
         env.render()
     print("Sim elapsed time:", laptime)

@@ -55,25 +55,8 @@ def main():
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
     planner = PurePursuitPlanner(waypoints=waypoints)
 
-    def render_callback(env_renderer):
-        # custom extra drawing function
 
-        e = env_renderer
-
-        # update camera to follow car
-        x = e.cars[0].vertices[::2]
-        y = e.cars[0].vertices[1::2]
-        top, bottom, left, right = max(y), min(y), min(x), max(x)
-        e.score_label.x = left
-        e.score_label.y = top - 700
-        e.left = left - 800
-        e.right = right + 800
-        e.top = top + 800
-        e.bottom = bottom - 800
-
-        planner.render_waypoints(env_renderer)
-
-    env.add_render_callback(render_callback)
+    env.add_render_callback(planner.render_waypoints)
     
     # reset environment
     poses = np.array(
@@ -86,16 +69,18 @@ def main():
         ]
     )
     obs, info = env.reset(options={"poses": poses})
+    done = False
+    env.render()
 
     # run simulation
     laptime = 0.0
-    done = False
     while not done:
         steer, speed = planner.plan(obs["agent_0"]['pose_x'],
                                     obs["agent_0"]['pose_y'],
                                     obs["agent_0"]['pose_theta'],
                                     lookahead_distance=0.8)
         obs, timestep, terminated, truncated, infos = env.step(np.array([[steer, speed]]))
+        done = terminated or truncated
         laptime += timestep
         env.render()
     print('Sim elapsed time:', laptime)
