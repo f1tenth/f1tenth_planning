@@ -54,9 +54,9 @@ def main():
     # create planner
     planner = KMPCPlanner(track=env.track, debug=False)
     planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
-
-    env.add_render_callback(planner.render_waypoints)
-
+    env.unwrapped.add_render_callback(planner.render_waypoints)
+    env.unwrapped.add_render_callback(planner.render_local_plan)
+    env.unwrapped.add_render_callback(planner.render_mpc_sol)
 
     # reset environment
     poses = np.array(
