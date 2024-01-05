@@ -4,6 +4,7 @@ import cProfile
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def sample_grid():
     x = np.linspace(0.2, 4, 10)
     y = np.linspace(-2, 2, 11)
@@ -19,6 +20,7 @@ def sample_grid():
             # plt.scatter(curr_x, curr_y)
     # plt.show()
 
+
 def test_cont():
     clothoid = Clothoid.G1Hermite(0, 0, 0, 1, 1, 0)
     traj = sample_traj(clothoid, 100)
@@ -31,10 +33,13 @@ def test_cont():
     plt.plot(x, y)
     plt.show()
 
+
 def test():
     for i in range(100):
         sample_grid()
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     # cProfile.run('test_cont()')
     # test()
     clothoid = Clothoid.G1Hermite(0, 0, 0, 1, 1, 0)
@@ -44,6 +49,6 @@ if __name__ == '__main__':
     plt.plot(traj[:, 2])
     plt.plot(thetas)
     plt.show()
-    plt.scatter(traj[:, 0], traj[:, 1], marker='x')
-    plt.scatter(x, y, marker='*')
+    plt.scatter(traj[:, 0], traj[:, 1], marker="x")
+    plt.scatter(x, y, marker="*")
     plt.show()

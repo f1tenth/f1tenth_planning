@@ -59,6 +59,24 @@ class PurePursuitPlanner(Controller):
         self.params.update(params or {})
 
         self.waypoints = np.stack([track.raceline.xs, track.raceline.ys, track.raceline.vxs], axis=1)
+        self.lookahead_point = None
+        self.current_index = None
+
+    def render_lookahead_point(self, e):
+        """
+        Callback to render the lookahead point.
+        """
+        if self.lookahead_point is not None:
+            points = self.lookahead_point[:2][None]  # shape (1, 2)
+            e.render_points(points, color=(0, 0, 128), size=2)
+
+    def render_local_plan(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        if self.current_index is not None:
+            points = self.waypoints[self.current_index : self.current_index + 10, :2]
+            e.render_lines(points, color=(0, 128, 0), size=2)
 
     def _get_current_waypoint(self, lookahead_distance, position, theta):
         """
@@ -75,17 +93,21 @@ class PurePursuitPlanner(Controller):
 
         nearest_p, nearest_dist, t, i = nearest_point(position, self.waypoints[:, 0:2])
         if nearest_dist < lookahead_distance:
-            lookahead_point, i2, t2 = intersect_point(
+            self.lookahead_point, self.current_index, t2 = intersect_point(
                 position,
                 lookahead_distance,
                 self.waypoints[:, 0:2],
                 np.float32(i + t),
                 wrap=True,
             )
-            if i2 is None:
+            if self.current_index is None:
                 return None
             current_waypoint = np.array(
-                [self.waypoints[i2, 0], self.waypoints[i2, 1], self.waypoints[i, 2]]
+                [
+                    self.waypoints[self.current_index, 0],
+                    self.waypoints[self.current_index, 1],
+                    self.waypoints[i, 2],
+                ]
             )
             return current_waypoint
         elif nearest_dist < self.params["max_reacquire"]:
@@ -109,20 +131,20 @@ class PurePursuitPlanner(Controller):
         position = np.array([pose_x, pose_y])
 
         lookahead_distance = np.float32(self.params["lookahead_distance"])
-        lookahead_point = self._get_current_waypoint(
+        self.lookahead_point = self._get_current_waypoint(
             lookahead_distance, position, pose_theta
         )
 
-        if lookahead_point is None:
+        if self.lookahead_point is None:
             warnings.warn("Cannot find lookahead point, stopping...")
             return np.zeros(2)
 
         speed, steering_angle = get_actuation(
             pose_theta,
-            lookahead_point,
+            self.lookahead_point,
             position,
             lookahead_distance,
-            self.params["wheelbase"],
+            self.wheelbase,
         )
 
         # scale speed according to the velocity gain

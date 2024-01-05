@@ -55,6 +55,8 @@ class StanleyPlanner(Controller):
             "vgain": 0.7,
         }
         self.params.update(params or {})
+        self.target_point = None
+        self.target_index = None
 
         self.waypoints = np.stack(
             [
@@ -65,6 +67,22 @@ class StanleyPlanner(Controller):
             ],
             axis=1,
         )
+
+    def render_target_point(self, e):
+        """
+        Callback to render the target point.
+        """
+        if self.target_point is not None:
+            points = self.target_point[:2][None]  # shape (1, 2)
+            e.render_points(points, color=(0, 0, 128), size=2)
+
+    def render_local_plan(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        if self.target_index is not None:
+            points = self.waypoints[self.target_index : self.target_index + 10, :2]
+            e.render_lines(points, color=(0, 128, 0), size=2)
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
@@ -78,10 +96,10 @@ class StanleyPlanner(Controller):
         fx = vehicle_state[0] + self.params["wheelbase"] * math.cos(vehicle_state[2])
         fy = vehicle_state[1] + self.params["wheelbase"] * math.sin(vehicle_state[2])
         position_front_axle = np.array([fx, fy])
-        nearest_point_front, nearest_dist, t, target_index = nearest_point(
+        self.target_point, nearest_dist, t, self.target_index = nearest_point(
             position_front_axle, self.waypoints[:, 0:2]
         )
-        vec_dist_nearest_point = position_front_axle - nearest_point_front
+        vec_dist_nearest_point = position_front_axle - self.target_point
 
         # crosstrack error
         front_axle_vec_rot_90 = np.array(
@@ -94,13 +112,13 @@ class StanleyPlanner(Controller):
 
         # heading error
         # NOTE: If your raceline is based on a different coordinate system you need to -+ pi/2 = 90 degrees
-        theta_raceline = waypoints[target_index, 3]
+        theta_raceline = waypoints[self.target_index, 3]
         theta_e = pi_2_pi(theta_raceline - vehicle_state[2])
 
         # target velocity
-        goal_veloctiy = waypoints[target_index, 2]
+        goal_veloctiy = waypoints[self.target_index, 2]
 
-        return theta_e, ef, target_index, goal_veloctiy
+        return theta_e, ef, self.target_index, goal_veloctiy
 
     def controller(self, vehicle_state, waypoints, k_path):
         """

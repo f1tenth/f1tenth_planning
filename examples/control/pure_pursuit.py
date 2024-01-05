@@ -56,14 +56,16 @@ def main():
 
 
     env.add_render_callback(planner.render_waypoints)
-    
+    env.add_render_callback(planner.render_local_plan)
+    env.add_render_callback(planner.render_lookahead_point)
+
     # reset environment
     poses = np.array(
         [
             [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
+                track.raceline.xs[0],
+                track.raceline.ys[0],
+                track.raceline.yaws[0],
             ]
         ]
     )
@@ -79,8 +81,8 @@ def main():
         done = terminated or truncated
         laptime += timestep
         env.render()
-    print('Sim elapsed time:', laptime)
+    print("Sim elapsed time:", laptime)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

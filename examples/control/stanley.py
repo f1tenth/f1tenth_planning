@@ -54,9 +54,10 @@ def main():
     track = env.unwrapped.track
     planner = StanleyPlanner(track=track)
 
-
     env.add_render_callback(planner.render_waypoints)
-    
+    env.add_render_callback(planner.render_local_plan)
+    env.add_render_callback(planner.render_target_point)
+
     # reset environment
     poses = np.array(
         [
