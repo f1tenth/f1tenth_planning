@@ -3,6 +3,7 @@ import cProfile
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def sample_grid():
     x = np.linspace(0.2, 4, 10)
     y = np.linspace(-2, 2, 11)
@@ -16,9 +17,13 @@ def sample_grid():
             all_y.extend(curr_y)
             # plt.scatter(curr_x, curr_y)
     # plt.show()
+
+
 def test():
     for i in range(100):
         sample_grid()
-if __name__ == '__main__':
-    cProfile.run('test()')
+
+
+if __name__ == "__main__":
+    cProfile.run("test()")
     # test()

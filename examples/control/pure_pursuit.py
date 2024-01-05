@@ -31,7 +31,6 @@ import numpy as np
 import gymnasium as gym
 import f110_gym
 
-
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
 
 
@@ -42,37 +41,58 @@ def main():
     """
 
     # create environment
-    env = gym.make('f110_gym:f110-v0',
-                   config={
-                       "map": "Spielberg",
-                       "num_agents": 1,
-                       "control_input": "speed",
-                       "observation_config": {"type": "kinematic_state"},
-                   },
-                   render_mode='human')
+    env = gym.make(
+        "f110_gym:f110-v0",
+        config={
+            "map": "Spielberg",
+            "num_agents": 1,
+            "control_input": "speed",
+            "observation_config": {"type": "kinematic_state"},
+        },
+        render_mode="human",
+    )
 
     # create planner
     raceline = env.unwrapped.track.raceline
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
     planner = PurePursuitPlanner(waypoints=waypoints)
 
+    env.add_render_callback(planner.render_waypoints)
+    env.add_render_callback(planner.render_local_plan)
+    env.add_render_callback(planner.render_lookahead_point)
+
     # reset environment
-    first_pose = np.array([raceline.xs[0], raceline.ys[0], raceline.yaws[0]])
-    obs, _ = env.reset(options={"poses": first_pose[None]})
+    track = env.unwrapped.track
+    poses = np.array(
+        [
+            [
+                track.raceline.xs[0],
+                track.raceline.ys[0],
+                track.raceline.yaws[0],
+            ]
+        ]
+    )
+    obs, info = env.reset(options={"poses": poses})
+    done = False
+    env.render()
 
     # run simulation
     laptime = 0.0
-    done = False
     while not done:
-        steer, speed = planner.plan(obs["agent_0"]['pose_x'],
-                                    obs["agent_0"]['pose_y'],
-                                    obs["agent_0"]['pose_theta'],
-                                    lookahead_distance=0.8)
-        obs, timestep, terminated, truncated, infos = env.step(np.array([[steer, speed]]))
+        steer, speed = planner.plan(
+            obs["agent_0"]["pose_x"],
+            obs["agent_0"]["pose_y"],
+            obs["agent_0"]["pose_theta"],
+            lookahead_distance=0.8,
+        )
+        obs, timestep, terminated, truncated, infos = env.step(
+            np.array([[steer, speed]])
+        )
+        done = terminated or truncated
         laptime += timestep
         env.render()
-    print('Sim elapsed time:', laptime)
+    print("Sim elapsed time:", laptime)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
