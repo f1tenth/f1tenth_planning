@@ -53,14 +53,15 @@ def main():
 
     # reset environment
     raceline = env.unwrapped.track.raceline
-    waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
+    waypoints = np.stack(
+        [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
+    )
     planner = StanleyPlanner(waypoints=waypoints)
-
 
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)
     env.add_render_callback(planner.render_target_point)
-    
+
     # reset environment
     poses = np.array(
         [

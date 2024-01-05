@@ -122,7 +122,12 @@ class STMPCPlanner:
         ),
         debug=False,
     ):
-        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+        self.waypoints = [
+            track.raceline.xs,
+            track.raceline.ys,
+            track.raceline.yaws,
+            track.raceline.vxs,
+        ]
         self.waypoints_distances = track.raceline.ss
         self.config = config
         self.vehicle_params = params
@@ -151,7 +156,7 @@ class STMPCPlanner:
         if self.ref_path is not None:
             points = self.ref_path[:2].T
             e.render_lines(points, color=(0, 128, 0), size=2)
-            
+
     def render_mpc_sol(self, e):
         """
         Callback to render the lookahead point.
@@ -198,7 +203,6 @@ class STMPCPlanner:
         )
 
         if states["linear_vel_x"] <= self.config.V_KS:
-
             (
                 accl,
                 steering_vel,
@@ -210,7 +214,6 @@ class STMPCPlanner:
                 mpc_oy,
             ) = self.MPC_Control_kinematic(vehicle_state, self.waypoints)
         else:
-
             (
                 accl,
                 steering_vel,
@@ -224,7 +227,7 @@ class STMPCPlanner:
 
         return steering_vel, accl
 
-    def calc_ref_trajectory(self, state : State, cx, cy, cyaw, sp):
+    def calc_ref_trajectory(self, state: State, cx, cy, cyaw, sp):
         """
         calc referent trajectory ref_traj in T steps: [x, y, delta, v, yaw, yaw rate, beta]
         using the current velocity, calc the T points along the reference path
@@ -266,7 +269,7 @@ class STMPCPlanner:
 
         return ref_traj
 
-    def calc_ref_trajectory_kinematic(self, state : State, cx, cy, cyaw, sp):
+    def calc_ref_trajectory_kinematic(self, state: State, cx, cy, cyaw, sp):
         """
         calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
         using the current velocity, calc the T points along the reference path
@@ -309,7 +312,6 @@ class STMPCPlanner:
         return ref_traj
 
     def predict_motion(self, x0, oa, od_v, xref, vehicle_params):
-
         # Create Vector that includes the predicted path for the next T time steps for all vehicle states
         path_predict = xref * 0.0
         for i, _ in enumerate(x0):
@@ -319,7 +321,7 @@ class STMPCPlanner:
         state = State(
             x=x0[0], y=x0[1], delta=x0[2], v=x0[3], yaw=x0[4], yawrate=x0[5], beta=x0[6]
         )
-        for (ai, d_vi, i) in zip(oa, od_v, range(1, self.config.T + 1)):
+        for ai, d_vi, i in zip(oa, od_v, range(1, self.config.T + 1)):
             state = self.update_state(state, ai, d_vi, vehicle_params)
             path_predict[0, i] = state.x
             path_predict[1, i] = state.y
@@ -337,7 +339,7 @@ class STMPCPlanner:
             path_predict[i, 0] = x0[i]
 
         state = State(x=x0[0], y=x0[1], yaw=x0[3], v=x0[2])
-        for (ai, di, i) in zip(oa, od, range(1, self.config.TK + 1)):
+        for ai, di, i in zip(oa, od, range(1, self.config.TK + 1)):
             state = self.update_state_kinematic(state, ai, di)
             path_predict[0, i] = state.x
             path_predict[1, i] = state.y
@@ -436,7 +438,6 @@ class STMPCPlanner:
         return state
 
     def update_state_kinematic(self, state, a, delta):
-
         # input check
         if delta >= self.config.MAX_STEER:
             delta = self.config.MAX_STEER
@@ -648,10 +649,14 @@ class STMPCPlanner:
         objective += cvxpy.quad_form(cvxpy.vec(self.u), psd_wrap(R_block))
 
         # Objective 2: Deviation of the vehicle from the reference trajectory weighted by Q, including final Timestep T weighted by Qf
-        objective += cvxpy.quad_form(cvxpy.vec(self.x - self.ref_traj), psd_wrap(Q_block))
+        objective += cvxpy.quad_form(
+            cvxpy.vec(self.x - self.ref_traj), psd_wrap(Q_block)
+        )
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
-        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.u, axis=1)), psd_wrap(Rd_block))
+        objective += cvxpy.quad_form(
+            cvxpy.vec(cvxpy.diff(self.u, axis=1)), psd_wrap(Rd_block)
+        )
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps
@@ -788,10 +793,14 @@ class STMPCPlanner:
         objective += cvxpy.quad_form(cvxpy.vec(self.uk), psd_wrap(R_block))
 
         # Objective 2: Deviation of the vehicle from the reference trajectory weighted by Q, including final Timestep T weighted by Qf
-        objective += cvxpy.quad_form(cvxpy.vec(self.xk - self.ref_traj_k), psd_wrap(Q_block))
+        objective += cvxpy.quad_form(
+            cvxpy.vec(self.xk - self.ref_traj_k), psd_wrap(Q_block)
+        )
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
-        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), psd_wrap(Rd_block))
+        objective += cvxpy.quad_form(
+            cvxpy.vec(cvxpy.diff(self.uk, axis=1)), psd_wrap(Rd_block)
+        )
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps
@@ -1207,7 +1216,9 @@ class STMPCPlanner:
         sp = path[3]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        self.ref_path = self.calc_ref_trajectory_kinematic(vehicle_state, cx, cy, cyaw, sp)
+        self.ref_path = self.calc_ref_trajectory_kinematic(
+            vehicle_state, cx, cy, cyaw, sp
+        )
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
 
@@ -1227,7 +1238,6 @@ class STMPCPlanner:
 
         accl_output = self.oa[0]
         svel_output = (self.odelta_v[0] - vehicle_state.delta) / self.config.DT
-
 
         if self.debug:
             plt.cla()

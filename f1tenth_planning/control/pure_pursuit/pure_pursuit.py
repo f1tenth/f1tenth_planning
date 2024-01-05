@@ -34,7 +34,8 @@ from f1tenth_planning.utils.utils import get_actuation
 import numpy as np
 import warnings
 
-class PurePursuitPlanner():
+
+class PurePursuitPlanner:
     """
     Pure pursuit tracking controller
     Reference: Coulter 1992, https://www.ri.cmu.edu/pub_files/pub3/coulter_r_craig_1992_1/coulter_r_craig_1992_1.pdf
@@ -48,8 +49,9 @@ class PurePursuitPlanner():
         max_reacquire (float): maximum radius (meters) for reacquiring current waypoints
         waypoints (numpy.ndarray [N x 4]): static list of waypoints, columns are [x, y, velocity, heading]
     """
+
     def __init__(self, wheelbase=0.33, waypoints=None):
-        self.max_reacquire = 20.
+        self.max_reacquire = 20.0
         self.wheelbase = wheelbase
         self.waypoints = waypoints
         self.drawn_waypoints = []
@@ -94,14 +96,22 @@ class PurePursuitPlanner():
 
         nearest_p, nearest_dist, t, i = nearest_point(position, self.waypoints[:, 0:2])
         if nearest_dist < lookahead_distance:
-            self.lookahead_point, self.current_index, t2 = intersect_point(position,
-                                                                           lookahead_distance,
-                                                                           self.waypoints[:, 0:2],
-                                                                           np.float32(i + t),
-                                                                           wrap=True)
+            self.lookahead_point, self.current_index, t2 = intersect_point(
+                position,
+                lookahead_distance,
+                self.waypoints[:, 0:2],
+                np.float32(i + t),
+                wrap=True,
+            )
             if self.current_index is None:
                 return None
-            current_waypoint = np.array([self.waypoints[self.current_index, 0], self.waypoints[self.current_index, 1], self.waypoints[i, 2]])
+            current_waypoint = np.array(
+                [
+                    self.waypoints[self.current_index, 0],
+                    self.waypoints[self.current_index, 1],
+                    self.waypoints[i, 2],
+                ]
+            )
             return current_waypoint
         elif nearest_dist < self.max_reacquire:
             return self.waypoints[i, :]
@@ -125,25 +135,29 @@ class PurePursuitPlanner():
         """
         if waypoints is not None:
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
-                raise ValueError('Waypoints needs to be a (Nxm), m >= 3, numpy array!')
+                raise ValueError("Waypoints needs to be a (Nxm), m >= 3, numpy array!")
             self.waypoints = waypoints
         else:
             if self.waypoints is None:
-                raise ValueError('Please set waypoints to track during planner instantiation or when calling plan()')
+                raise ValueError(
+                    "Please set waypoints to track during planner instantiation or when calling plan()"
+                )
         position = np.array([pose_x, pose_y])
         lookahead_distance = np.float32(lookahead_distance)
-        self.lookahead_point = self._get_current_waypoint(lookahead_distance,
-                                                          position,
-                                                          pose_theta)
+        self.lookahead_point = self._get_current_waypoint(
+            lookahead_distance, position, pose_theta
+        )
 
         if self.lookahead_point is None:
-            warnings.warn('Cannot find lookahead point, stopping...')
+            warnings.warn("Cannot find lookahead point, stopping...")
             return 0.0, 0.0
 
-        speed, steering_angle = get_actuation(pose_theta,
-                                              self.lookahead_point,
-                                              position,
-                                              lookahead_distance,
-                                              self.wheelbase)
+        speed, steering_angle = get_actuation(
+            pose_theta,
+            self.lookahead_point,
+            position,
+            lookahead_distance,
+            self.wheelbase,
+        )
 
         return steering_angle, speed

@@ -102,7 +102,12 @@ class KMPCPlanner:
         ),
         debug=False,
     ):
-        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+        self.waypoints = [
+            track.raceline.xs,
+            track.raceline.ys,
+            track.raceline.yaws,
+            track.raceline.vxs,
+        ]
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None
@@ -131,14 +136,14 @@ class KMPCPlanner:
         if self.ref_path is not None:
             points = self.ref_path[:2].T
             e.render_lines(points, color=(0, 128, 0), size=2)
-            
+
     def render_mpc_sol(self, e):
         """
         Callback to render the lookahead point.
         """
         if self.ox is not None and self.oy is not None:
             e.render_lines(np.array([self.ox, self.oy]).T, color=(0, 0, 128), size=2)
-        
+
     def plan(self, states, waypoints=None):
         """
         Planner plan function overload for Pure Pursuit, returns acutation based on current state
@@ -243,7 +248,7 @@ class KMPCPlanner:
             path_predict[i, 0] = x0[i]
 
         state = State(x=x0[0], y=x0[1], yaw=x0[3], v=x0[2])
-        for (ai, di, i) in zip(oa, od, range(1, self.config.TK + 1)):
+        for ai, di, i in zip(oa, od, range(1, self.config.TK + 1)):
             state = self.update_state_kinematic(state, ai, di)
             path_predict[0, i] = state.x
             path_predict[1, i] = state.y
@@ -253,7 +258,6 @@ class KMPCPlanner:
         return path_predict
 
     def update_state_kinematic(self, state, a, delta):
-
         # input check
         if delta >= self.config.MAX_STEER:
             delta = self.config.MAX_STEER
@@ -514,7 +518,9 @@ class KMPCPlanner:
         sp = path[3]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        self.ref_path = self.calc_ref_trajectory_kinematic(vehicle_state, cx, cy, cyaw, sp)
+        self.ref_path = self.calc_ref_trajectory_kinematic(
+            vehicle_state, cx, cy, cyaw, sp
+        )
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
 
