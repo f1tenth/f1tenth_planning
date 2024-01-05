@@ -144,7 +144,7 @@ class PurePursuitPlanner(Controller):
             self.lookahead_point,
             position,
             lookahead_distance,
-            self.wheelbase,
+            self.params["wheelbase"],
         )
 
         # scale speed according to the velocity gain
