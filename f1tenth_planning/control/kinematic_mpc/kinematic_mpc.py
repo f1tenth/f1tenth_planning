@@ -251,7 +251,7 @@ class KMPCPlanner:
         """
         Calc linear and discrete time dynamic model-> Explicit discrete time-invariant
         Linear System: Xdot = Ax +Bu + C
-        State vector: x=[x, y, v, yaw]
+        State vector: x=[x, y, v, yaw], Control vector: u=[acceleration, steering angle]
         :param v: speed
         :param phi: heading angle of the vehicle
         :param delta: steering angle: delta_bar

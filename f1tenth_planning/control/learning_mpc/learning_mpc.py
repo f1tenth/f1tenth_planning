@@ -97,6 +97,10 @@ class LMPCPlanner:
 
         self.zt = None
 
+        self.SS_trajectories = []  # iterations, length, states
+        self.uSS_trajectories = [] # iterations, length, inputs
+        self.vSS_trajectories = [] # iterations, length, 1 (values)
+
         self.config : lmpc_config = config
         self.odelta = None
         self.oa = None
@@ -144,23 +148,52 @@ class LMPCPlanner:
 
         return steering_angle, accl
 
-    def update_zt(self, ox, oy):
+    def update_zt(self, mpc_solution):
         """
         TODO: Update the reference target point based on the last mpc solution
         """
-        self.zt = None
+        self.zt = mpc_solution[:, -1]
 
     def select_safe_subset(self, numSS_Points, num_SS_it, zt):
         """
         TODO: Select the safe subset from the safe set
         """
-        return None
+        xSS_selected = []
+        vSS_selected = []
+        uSS_selected = []
+
+        # select from last num_SS_it trajectories
+        for iteration in range(len(self.SS_trajectories)-num_SS_it, len(self.SS_trajectories)):
+            # select the closes numSS_Points to zt
+            curr_trajectory = self.SS_trajectories[iteration]
+            curr_values = self.vSS_trajectories[iteration]
+            curr_control = self.uSS_trajectories[iteration]
+
+            curr_distances = np.linalg.norm(curr_trajectory - zt, axis=1)
+            curr_sorted_indices = np.argsort(curr_distances)
+
+            traj_selected_states = curr_trajectory[curr_sorted_indices[:numSS_Points]]
+            traj_selected_values = curr_values[curr_sorted_indices[:numSS_Points]]
+            traj_selected_control = curr_control[curr_sorted_indices[:numSS_Points]]
+
+            xSS_selected.append(traj_selected_states)
+            vSS_selected.append(traj_selected_values)
+            uSS_selected.append(traj_selected_control)
+
+        # Convert to numpy arrays
+        xSS_selected = np.array(xSS_selected)
+        vSS_selected = np.array(vSS_selected)
+        uSS_selected = np.array(uSS_selected)
+        return xSS_selected, vSS_selected, uSS_selected
     
     def update_safe_set(self, xSS_new, uSS_new, vSS_new):
         """
-        TODO: Update the safe set with the new trajectories
+        Update the safe set with the new trajectories
         """
-        return None
+        self.SS_trajectories.append(xSS_new)
+        self.uSS_trajectories.append(uSS_new)
+        self.vSS_trajectories.append(vSS_new)
+        return
 
     def get_dynamic_model_matrix(self, current_state, current_control_input):
         """
@@ -170,7 +203,69 @@ class LMPCPlanner:
         :param: current_state: current state of the vehicle [s, ey, epsi, v]
         :return: A, B, C matrices
         """
+        # Get control input
+        a = current_control_input[0]
+        delta = current_control_input[1]
+
         # TODO: Implement the linearized dynamic model of the vehicle
+        A = np.zeros((self.config.NX, self.config.NX))
+        B = np.zeros((self.config.NX, self.config.NU))
+        C = np.zeros((self.config.NX, 1))
+
+        curvature = 0.0 # TODO: add curvature
+
+        # ∇_x(s); s = vcos(epsi)/(1 - ey*curvature)
+        A[0, 1] = curvature * (current_state.v * np.cos(current_state.epsi)) / (1 - current_state.ey * curvature)**2 # ds/dey
+        A[0, 2] = - current_state.v * np.sin(current_state.epsi) / (1 - current_state.ey * curvature)                # ds/depsi
+        A[0, 3] = np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                                    # ds/dv
+        
+        # ∇_x(ey); ey = vsin(epsi)
+        A[1, 0] = 0.0                                                                                                 # dey/ds
+        A[1, 2] = current_state.v * np.cos(current_state.epsi)                                                        # dey/depsi
+        A[1, 3] = np.sin(current_state.epsi)                                                                          # dey/dv
+
+        # ∇_x(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
+        A[2, 0] = 0.0                                                                                                 # depsi/ds
+        A[2, 1] = - current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                 # depsi/dey
+        A[2, 3] = np.tan(current_control_input[1]) / self.config.WB                                                   # depsi/dv
+
+        # ∇_x(v)
+        A[3, 0] = 0.0                                                                                                 # dv/ds
+        A[3, 1] = 0.0                                                                                                 # dv/dey
+        A[3, 2] = 0.0                                                                                                 # dv/depsi
+
+        # Forward Euler Discretization, TODO: maybe replace with exact discretization
+        A = np.eye(self.config.NX) + A * self.config.DT
+
+        # ∇_u(s); s = vcos(epsi)/(1 - ey*curvature)
+        B[0, 0] = 0.0                                                                                                 # ds/da
+        B[0, 1] = 0.0                                                                                                 # ds/ddelta
+
+        # ∇_u(ey); ey = vsin(epsi)
+        B[1, 0] = 0.0                                                                                                 # dey/da
+        B[1, 1] = 0.0                                                                                                 # dey/ddelta
+
+        # ∇_u(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
+        B[2, 0] = 0.0                                                                                                 # depsi/da
+        B[2, 1] = current_state.v / (self.config.WB * np.cos(current_control_input[1])**2)                            # depsi/ddelta
+
+        # ∇_u(v)
+        B[3, 0] = 1.0                                                                                                 # dv/da
+        B[3, 1] = 0.0                                                                                                 # dv/ddelta
+
+        # Forward Euler Discretization
+        B = B * self.config.DT
+
+        # ∇_x(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
+        A[2, 0] = 0.0                                                                                                 # depsi/ds
+        A[2, 1] = - current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                 # depsi/dey
+        A[2, 3] = np.tan(current_control_input[1]) / self.config.WB                                                   # depsi/dv
+
+        # C = A*x + B*u - (x + f(x,u))*dt)
+        C[0] = -(current_state.ey * (curvature * (current_state.v * np.cos(current_state.epsi)) / (1 - current_state.ey * curvature)**2) + current_state.epsi * (- current_state.v * np.sin(current_state.epsi) / (1 - current_state.ey * curvature))) * self.config.DT
+        C[1] = -(current_state.epsi * (current_state.v * np.cos(current_state.epsi))) * self.config.DT
+        C[2] = -(delta * current_state.v / (self.config.WB * np.cos(current_control_input[1])**2) - current_state.ey * current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature) + current_state.v * np.tan(current_control_input[1]) / self.config.WB)* self.config.DT
+        C[3] = 0.0
         return None, None, None
 
     def predict_motion(self, x0, oa, od_v, xref, vehicle_params):
@@ -422,6 +517,8 @@ class LMPCPlanner:
             mpc_a = self.get_nparray_from_matrix(
                 self.u.value[1, :]
             )  # MPC-Control Input: Acceleration
+
+            self.update_zt(self.x.value) 
         else:
             print("Error: Cannot solve mpc..")
             (
