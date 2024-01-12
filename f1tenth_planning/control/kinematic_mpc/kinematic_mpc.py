@@ -39,6 +39,7 @@ from scipy.sparse import block_diag, csc_matrix, diags
 
 @dataclass
 class mpc_config:
+    # todo: rewrite this as a dict and update code accordingly using the dict
     NXK: int = 4  # length of kinematic state vector: z = [x, y, v, yaw]
     NU: int = 2  # length of input vector: u = = [steering speed, acceleration]
     TK: int = 8  # finite time horizon length kinematic
@@ -102,6 +103,7 @@ class KMPCPlanner:
         ),
         debug=False,
     ):
+        # todo: inherit from controller, implement init with arguments track, params as dict or path to config file
         self.waypoints = [
             track.raceline.xs,
             track.raceline.ys,
@@ -159,6 +161,7 @@ class KMPCPlanner:
             speed (float): commanded vehicle longitudinal velocity
             steering_angle (float):  commanded vehicle steering angle
         """
+        # todo: update signature plan(), take only observation, remove waypoints from plan()
 
         if states["linear_vel_x"] < 0.1:
             steer, accl = 0.0, self.config.MAX_ACCEL
@@ -208,6 +211,7 @@ class KMPCPlanner:
         :pind: Setpoint Index
         :return: reference trajectory ref_traj, reference steering angle
         """
+        # todo: is this the same as in dynamic mpc? if so, unify and move to utils.
 
         # Create placeholder Arrays for the reference trajectory for T steps
         ref_traj = np.zeros((self.config.NXK, self.config.TK + 1))
@@ -243,6 +247,7 @@ class KMPCPlanner:
         return ref_traj
 
     def predict_motion_kinematic(self, x0, oa, od, xref):
+        # todo: is this the same as in dynamic mpc? if so, unify and move to utils.
         path_predict = xref * 0.0
         for i, _ in enumerate(x0):
             path_predict[i, 0] = x0[i]
@@ -541,6 +546,7 @@ class KMPCPlanner:
         accl_output = self.oa[0]
         sv_output = (self.odelta_v[0] - vehicle_state.delta) / self.config.DTK
 
+        # todo: clean here, remove debug plotting
         if self.debug:
             plt.cla()
             plt.axis(

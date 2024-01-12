@@ -28,7 +28,7 @@ Last Modified: 5/1/22
 """
 from f110_gym.envs.track import Track
 
-from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.controller import Controller, load_params
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
 
@@ -48,13 +48,14 @@ class StanleyPlanner(Controller):
         params (dict, optional): dictionary of parameters, including wheelbase, k_path, ...
     """
 
-    def __init__(self, track: Track, params: dict = None):
+    def __init__(self, track: Track, params: dict | str = None):
         self.params = {
             "k_path": 5.0,
             "wheelbase": 0.33,
             "vgain": 0.7,
         }
-        self.params.update(params or {})
+        self.params = load_params(default_params=self.params, new_params=params)
+
         self.target_point = None
         self.target_index = None
 

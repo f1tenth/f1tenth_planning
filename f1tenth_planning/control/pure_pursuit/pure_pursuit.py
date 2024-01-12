@@ -28,7 +28,7 @@ Last Modified: 5/4/22
 """
 from f110_gym.envs.track import Track
 
-from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.controller import Controller, load_params
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_actuation
@@ -49,14 +49,14 @@ class PurePursuitPlanner(Controller):
         params (dict, optional): dictionary of parameters, including wheelbase, lookahead dist, ...
     """
 
-    def __init__(self, track: Track, params: dict = None):
+    def __init__(self, track: Track, params: dict | str = None) -> None:
         self.params = {
             "wheelbase": 0.33,
             "max_reacquire": 20.0,
             "lookahead_distance": 1.0,
             "vgain": 1.0,
         }
-        self.params.update(params or {})
+        self.params = load_params(default_params=self.params, new_params=params)
 
         self.waypoints = np.stack([track.raceline.xs, track.raceline.ys, track.raceline.vxs], axis=1)
         self.lookahead_point = None

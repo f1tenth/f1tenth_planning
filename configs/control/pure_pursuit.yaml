@@ -1,0 +1,5 @@
+# config file for pure pursuit controller
+wheelbase: 0.33
+max_reacquire: 20.0
+lookahead_distance: 1.0
+vgain: 1.0

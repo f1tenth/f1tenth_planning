@@ -1,0 +1,4 @@
+# config file for stanley controller
+k_path: 5.0
+wheelbase: 0.33
+vgain: 0.7

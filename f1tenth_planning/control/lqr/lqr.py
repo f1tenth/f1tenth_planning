@@ -29,7 +29,7 @@ Last Modified: 5/5/22
 """
 from f110_gym.envs.track import Track
 
-from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.controller import Controller, load_params
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
 from f1tenth_planning.utils.utils import solve_lqr
@@ -48,7 +48,7 @@ class LQRPlanner(Controller):
         params (dict, optional): dictionary of parameters, including wheelbase, matrix Q, matrix R, ...
     """
 
-    def __init__(self, track: Track, params: dict = None):
+    def __init__(self, track: Track, params: dict | str = None):
         self.params = {
             "wheelbase": 0.33,
             "timestep": 0.01,
@@ -61,7 +61,7 @@ class LQRPlanner(Controller):
             "eps": 0.001,
             "vgain": 1.0,
         }
-        self.params.update(params or {})
+        self.params = load_params(default_params=self.params, new_params=params)
 
         self.waypoints = np.stack(
             [

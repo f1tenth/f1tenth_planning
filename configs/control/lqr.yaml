@@ -1,0 +1,11 @@
+# config file for lqr controller
+wheelbase: 0.33
+timestep: 0.01
+matrix_q_1: 0.999
+matrix_q_2: 0.0
+matrix_q_3: 0.0066
+matrix_q_4: 0.0
+matrix_r: 0.75
+iterations: 50
+eps: 0.001
+vgain: 1.0
