@@ -41,19 +41,20 @@ def main():
     """
 
     # create environment
-    env = gym.make('f110_gym:f110-v0',
-                   config={
-                       "map": "Spielberg",
-                       "num_agents": 1,
-                       "control_input": "speed",
-                       "observation_config": {"type": "kinematic_state"},
-                   },
-                   render_mode='human')
+    env = gym.make(
+        "f110_gym:f110-v0",
+        config={
+            "map": "Spielberg",
+            "num_agents": 1,
+            "control_input": "speed",
+            "observation_config": {"type": "kinematic_state"},
+        },
+        render_mode="human",
+    )
 
     # create planner
     track = env.unwrapped.track
     planner = PurePursuitPlanner(track=track, params={"lookahead_distance": 0.8})
-
 
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)
@@ -61,13 +62,7 @@ def main():
 
     # reset environment
     poses = np.array(
-        [
-            [
-                track.raceline.xs[0],
-                track.raceline.ys[0],
-                track.raceline.yaws[0],
-            ]
-        ]
+        [[track.raceline.xs[0], track.raceline.ys[0], track.raceline.yaws[0],]]
     )
     obs, info = env.reset(options={"poses": poses})
     done = False
