@@ -55,6 +55,7 @@ class Controller(ABC):
             points = self.waypoints[:, :2]
             e.render_closed_lines(points, color=self.color, size=1)
 
+
 def load_params(default_params: dict, new_params: dict | str = None) -> dict:
     """
     Update default parameters with new parameters from a dict or yaml file.

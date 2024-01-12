@@ -58,7 +58,9 @@ class PurePursuitPlanner(Controller):
         }
         self.params = load_params(default_params=self.params, new_params=params)
 
-        self.waypoints = np.stack([track.raceline.xs, track.raceline.ys, track.raceline.vxs], axis=1)
+        self.waypoints = np.stack(
+            [track.raceline.xs, track.raceline.ys, track.raceline.vxs], axis=1
+        )
         self.lookahead_point = None
         self.current_index = None
 
@@ -127,7 +129,11 @@ class PurePursuitPlanner(Controller):
         """
         assert self.waypoints is not None, "waypoints are not set"
 
-        pose_x, pose_y, pose_theta = state["pose_x"], state["pose_y"], state["pose_theta"]
+        pose_x, pose_y, pose_theta = (
+            state["pose_x"],
+            state["pose_y"],
+            state["pose_theta"],
+        )
         position = np.array([pose_x, pose_y])
 
         lookahead_distance = np.float32(self.params["lookahead_distance"])

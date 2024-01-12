@@ -310,13 +310,8 @@ class GDScriptLexer(RegexLexer):
             (r"0[xX][a-fA-F0-9]+", Number.Hex),
             (r"\d+j?", Number.Integer),
         ],
-        "name": [
-            ("[a-zA-Z_]\w*", Name),
-        ],
-        "funcname": [
-            ("[a-zA-Z_]\w*", Name.Function, "#pop"),
-            default("#pop"),
-        ],
+        "name": [("[a-zA-Z_]\w*", Name),],
+        "funcname": [("[a-zA-Z_]\w*", Name.Function, "#pop"), default("#pop"),],
         "classname": [("[a-zA-Z_]\w*", Name.Class, "#pop")],
         "stringescape": [
             (

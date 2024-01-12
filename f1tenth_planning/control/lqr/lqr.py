@@ -99,7 +99,7 @@ class LQRPlanner(Controller):
         update waypoints being drawn by EnvRenderer
         """
         if self.target_index is not None:
-            points = self.waypoints[self.target_index: self.target_index + 10, :2]
+            points = self.waypoints[self.target_index : self.target_index + 10, :2]
             e.render_lines(points, color=(0, 128, 0), size=2)
 
     def calc_control_points(self, vehicle_state, waypoints):
