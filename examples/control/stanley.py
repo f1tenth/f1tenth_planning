@@ -52,7 +52,8 @@ def main():
 
     # reset environment
     track = env.unwrapped.track
-    planner = StanleyPlanner(track=track)
+    params = {"vgain": 0.7}
+    planner = StanleyPlanner(track=track, params=params)
 
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)

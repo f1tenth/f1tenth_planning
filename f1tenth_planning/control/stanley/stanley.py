@@ -52,7 +52,7 @@ class StanleyPlanner(Controller):
         self.params = {
             "k_path": 5.0,
             "wheelbase": 0.33,
-            "vgain": 0.7,
+            "vgain": 1.0,
         }
         self.params = load_params(default_params=self.params, new_params=params)
 
