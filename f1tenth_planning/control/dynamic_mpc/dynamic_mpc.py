@@ -36,6 +36,7 @@ from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
+from pyglet.gl import GL_POINTS
 
 
 @dataclass
@@ -46,16 +47,16 @@ class mpc_config:
     T: int = 40  # finite time horizon length
     TK: int = 8  # finite time horizon length kinematic
     R: list = field(
-        default_factory=lambda: diags([0.5, 0.01])
+        default_factory=lambda: diags([0.5, 4.0])
     )  # input cost matrix, penalty for inputs - [steering_speed, accel]
     Rd: list = field(
-        default_factory=lambda: diags([0.3, 0.01])
+        default_factory=lambda: diags([0.3, 4.0])
     )  # input difference cost matrix, penalty for change of inputs - [steering_speed, accel]
     Q: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([18.5, 18.5, 0.0, 1.5, 0.0, 0.0, 0.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
     Qf: list = field(
-        default_factory=lambda: diags([32.0, 32.0, 0.0, 1.0, 0.5, 0.0, 0.0])
+        default_factory=lambda: diags([18.5, 18.5, 0.0, 1.5, 0.0, 0.0, 0.0])
     )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
     Rk: list = field(
         default_factory=lambda: np.diag([0.01, 100.0])
@@ -64,11 +65,11 @@ class mpc_config:
         default_factory=lambda: np.diag([0.01, 100.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
-    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw, yaw-rate, beta]
+        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
+    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, v, yaw]
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0])
-    )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw, yaw-rate, beta]
+        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
+    )  # final state error matrix, penalty  for the final state constraints: [x, y, v, yaw]
     N_IND_SEARCH: int = 20  # Search index number
     DT: float = 0.025  # time step [s]
     DTK: float = 0.1  # time step [s] kinematic
@@ -114,21 +115,49 @@ class STMPCPlanner:
 
     def __init__(
         self,
-        waypoints=None,
+        track,
         config=mpc_config(),
         params=np.array(
             [3.74, 0.15875, 0.17145, 0.074, 4.718, 5.4562, 0.04712, 1.0489]
         ),
         debug=False,
     ):
-        self.waypoints = waypoints
+        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+        self.waypoints_distances = track.raceline.ss
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None
         self.oa = None
+        self.ref_path = None
+        self.ox = None
+        self.oy = None
         self.init_flag = 0
         self.mpc_prob_init_kinematic()
         self.debug = debug
+
+        self.drawn_waypoints = []
+
+    def render_waypoints(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        points = np.array(self.waypoints).T[:, :2]
+        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+
+    def render_local_plan(self, e):
+        """
+        update waypoints being drawn by EnvRenderer
+        """
+        if self.ref_path is not None:
+            points = self.ref_path[:2].T
+            e.render_lines(points, color=(0, 128, 0), size=2)
+            
+    def render_mpc_sol(self, e):
+        """
+        Callback to render the lookahead point.
+        """
+        if self.ox is not None and self.oy is not None:
+            e.render_lines(np.array([self.ox, self.oy]).T, color=(0, 0, 128), size=2)
 
     def plan(self, states, waypoints=None):
         """
@@ -195,9 +224,9 @@ class STMPCPlanner:
 
         return steering_vel, accl
 
-    def calc_ref_trajectory(self, state, cx, cy, cyaw, sp):
+    def calc_ref_trajectory(self, state : State, cx, cy, cyaw, sp):
         """
-        calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
+        calc referent trajectory ref_traj in T steps: [x, y, delta, v, yaw, yaw rate, beta]
         using the current velocity, calc the T points along the reference path
         :param cx: Course X-Position
         :param cy: Course y-Position
@@ -237,7 +266,7 @@ class STMPCPlanner:
 
         return ref_traj
 
-    def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp):
+    def calc_ref_trajectory_kinematic(self, state : State, cx, cy, cyaw, sp):
         """
         calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
         using the current velocity, calc the T points along the reference path
@@ -1075,7 +1104,7 @@ class STMPCPlanner:
         sp = path[3]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        ref_path = self.calc_ref_trajectory(vehicle_state, cx, cy, cyaw, sp)
+        self.ref_path = self.calc_ref_trajectory(vehicle_state, cx, cy, cyaw, sp)
 
         # Create state vector based on current vehicle state: [x, y, delta, v, yaw, yawrate, beta]
         x0 = [
@@ -1093,8 +1122,8 @@ class STMPCPlanner:
         (
             self.oa,
             self.odelta_v,
-            ox,
-            oy,
+            self.ox,
+            self.oy,
             odelta,
             ov,
             oyaw,
@@ -1102,7 +1131,7 @@ class STMPCPlanner:
             obeta,
             state_predict,
         ) = self.linear_mpc_control(
-            ref_path, x0, self.oa, self.odelta_v, vehicle_params
+            self.ref_path, x0, self.oa, self.odelta_v, vehicle_params
         )
 
         if self.odelta_v is not None:
@@ -1140,16 +1169,16 @@ class STMPCPlanner:
                 label="CoG",
             )
             plt.scatter(
-                ref_path[0],
-                ref_path[1],
+                self.ref_path[0],
+                self.ref_path[1],
                 marker="x",
                 linewidth=4,
                 color="purple",
                 label="MPC Input: Ref. Trajectory for T steps",
             )
             plt.scatter(
-                ox,
-                oy,
+                self.ox,
+                self.oy,
                 marker="o",
                 linewidth=4,
                 color="green",
@@ -1162,12 +1191,12 @@ class STMPCPlanner:
         return (
             accl_output,
             svel_output,
-            ref_path[0],
-            ref_path[1],
+            self.ref_path[0],
+            self.ref_path[1],
             state_predict[0],
             state_predict[1],
-            ox,
-            oy,
+            self.ox,
+            self.oy,
         )
 
     def MPC_Control_kinematic(self, vehicle_state, path):
@@ -1178,7 +1207,7 @@ class STMPCPlanner:
         sp = path[3]  # Trajectory Velocity
 
         # Calculate the next reference trajectory for the next T steps:: [x, y, v, yaw]
-        ref_path = self.calc_ref_trajectory_kinematic(vehicle_state, cx, cy, cyaw, sp)
+        self.ref_path = self.calc_ref_trajectory_kinematic(vehicle_state, cx, cy, cyaw, sp)
         # Create state vector based on current vehicle state: x-position, y-position,  velocity, heading
         x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
 
@@ -1186,12 +1215,12 @@ class STMPCPlanner:
         (
             self.oa,
             self.odelta_v,
-            ox,
-            oy,
+            self.ox,
+            self.oy,
             oyaw,
             ov,
             state_predict,
-        ) = self.linear_mpc_control_kinematic(ref_path, x0, self.oa, self.odelta_v)
+        ) = self.linear_mpc_control_kinematic(self.ref_path, x0, self.oa, self.odelta_v)
 
         if self.odelta_v is not None:
             di, ai = self.odelta_v[0], self.oa[0]
@@ -1227,16 +1256,16 @@ class STMPCPlanner:
                 label="CoG",
             )
             plt.scatter(
-                ref_path[0],
-                ref_path[1],
+                self.ref_path[0],
+                self.ref_path[1],
                 marker="x",
                 linewidth=4,
                 color="purple",
                 label="MPC Input: Ref. Trajectory for T steps",
             )
             plt.scatter(
-                ox,
-                oy,
+                self.ox,
+                self.oy,
                 marker="o",
                 linewidth=4,
                 color="green",
@@ -1249,10 +1278,10 @@ class STMPCPlanner:
         return (
             accl_output,
             svel_output,
-            ref_path[0],
-            ref_path[1],
+            self.ref_path[0],
+            self.ref_path[1],
             state_predict[0],
             state_predict[1],
-            ox,
-            oy,
+            self.ox,
+            self.oy,
         )

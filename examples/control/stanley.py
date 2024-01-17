@@ -30,7 +30,6 @@ Last Modified: 5/4/22
 import numpy as np
 import gymnasium as gym
 import f110_gym
-
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
@@ -52,18 +51,32 @@ def main():
         render_mode="human",
     )
 
-    # create planner
+    # reset environment
     raceline = env.unwrapped.track.raceline
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
     planner = StanleyPlanner(waypoints=waypoints)
 
+
+    env.add_render_callback(planner.render_waypoints)
+    env.add_render_callback(planner.render_local_plan)
+    env.add_render_callback(planner.render_target_point)
+    
     # reset environment
-    first_pose = np.array([raceline.xs[0], raceline.ys[0], raceline.yaws[0]])
-    obs, _ = env.reset(options={"poses": first_pose[None]})
+    poses = np.array(
+        [
+            [
+                env.track.raceline.xs[0],
+                env.track.raceline.ys[0],
+                env.track.raceline.yaws[0],
+            ]
+        ]
+    )
+    obs, info = env.reset(options={"poses": poses})
+    done = False
+    env.render()
 
     # run simulation
     laptime = 0.0
-    done = False
     while not done:
         steer, speed = planner.plan(
             obs["agent_0"]["pose_x"],
@@ -76,6 +89,7 @@ def main():
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
+        done = terminated or truncated
         laptime += timestep
         env.render()
     print("Sim elapsed time:", laptime)
