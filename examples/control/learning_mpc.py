@@ -111,6 +111,9 @@ def main():
                                 obs["agent_0"]["beta"]]
                               ])        
         steerv, accl = planner.plan(obs["agent_0"])
+        if planner.xk.value is not None:
+            lmpc.update_zt(planner.xk.value)
+
         obs, timestep, terminated, truncated, infos = env.step(np.array([[steerv, accl]]))
         done = terminated or truncated
         env.render()
@@ -134,8 +137,6 @@ def main():
             curr_trajectory = np.zeros((0, 7))
             curr_controls = np.zeros((0, planner.config.NU))
 
-            time.sleep(3)
-
         if done and (obs["agent_0"]["lap_count"] != desired_laps):
             done = False
             terminated = False
@@ -143,6 +144,10 @@ def main():
     # Scatter xSS x,y colored with vSS
     for i in range(len(lmpc.SS_trajectories)):
         plt.scatter(lmpc.SS_trajectories[i][:,0], lmpc.SS_trajectories[i][:,1], c=lmpc.vSS_trajectories[i])
+    # Plot zt for reference
+    plt.scatter(lmpc.zt[0], lmpc.zt[1], c='r', s=50, marker='x')
+    # Plot current position
+    plt.scatter(curr_state[0,0], curr_state[0,1], c='g', s=50, marker='s')
     plt.show()
 
     print("Sim elapsed time:", total_time, "Real elapsed time:", time.time() - start)
