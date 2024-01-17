@@ -55,11 +55,10 @@ class lmpc_config:
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
-    MIN_STEER: float = -0.4189  # maximum steering angle [rad]
-    MAX_STEER: float = 0.4189  # maximum steering angle [rad]
+    MAX_STEER: float = 0.4189  # maximum absolute steering angle [rad]
     MAX_SPEED: float = 6.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
-    MAX_ACCEL: float = 3.0  # maximum acceleration [m/ss]
+    MAX_ACCEL: float = 3.0  # maximum absolute acceleration [m/ss]
     TRACK_WIDTH: float = 0.31  # Width of the track [m]
     num_SS_it: int = 4  # Number of trajectories used at each iteration to build the safe set
     numSS_Points = 48    # Number of points to select from each trajectory to build the safe set
@@ -210,7 +209,7 @@ class LMPCPlanner:
         # TODO: Implement the linearized dynamic model of the vehicle
         A = np.zeros((self.config.NX, self.config.NX))
         B = np.zeros((self.config.NX, self.config.NU))
-        C = np.zeros((self.config.NX, 1))
+        C = np.zeros((self.config.NX,))
 
         curvature = 0.0 # TODO: add curvature
 
@@ -266,7 +265,8 @@ class LMPCPlanner:
         C[1] = -(current_state.epsi * (current_state.v * np.cos(current_state.epsi))) * self.config.DT
         C[2] = -(delta * current_state.v / (self.config.WB * np.cos(current_control_input[1])**2) - current_state.ey * current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature) + current_state.v * np.tan(current_control_input[1]) / self.config.WB)* self.config.DT
         C[3] = 0.0
-        return None, None, None
+
+        return A, B, C
 
     def predict_motion(self, x0, oa, od_v, xref, vehicle_params):
 
@@ -314,7 +314,7 @@ class LMPCPlanner:
     def get_nparray_from_matrix(self, x):
         return np.array(x).flatten()
 
-    def lmpc_prob_init(self, xSS, vSS, state_predict, x0, oa):
+    def lmpc_prob_init(self):
         """
         Create MPC quadratic optimization problem using cvxpy, solver: OSQP
         Will be solved every iteration for control.
@@ -323,29 +323,27 @@ class LMPCPlanner:
         :param xSS: Safe Set States (numSS_Points, NX)
         :param vSS: Safe Set Values (numSS_Points, 1)
         :param state_predict: predicted states in T steps
-        :param x0: (self.config.NX,) initial state
-        :param oa: output for T steps
         """
         # Initialize and create vectors for the optimization problem
         self.x = cvxpy.Variable(
             (self.config.NX, self.config.T + 1)
         )  # Vehicle State Vector
         self.u = cvxpy.Variable((self.config.NU, self.config.T))  # Control Input vector
-        self.lambda_f = cvxpy.Variable(self.config.numSS_Points, 1) # Lambda vector to calculate terminal cost
+        self.lambda_f = cvxpy.Variable((self.config.numSS_Points, 1)) # Lambda vector to calculate terminal cost
         objective = 0.0  # Objective value of the optimization problem, set to zero
         constraints = []  # Create constraints array
 
         # Initialize reference vectors
         self.x0 = cvxpy.Parameter((self.config.NX,))
-        self.x0.value = x0
+        self.x0.value = np.zeros((self.config.NX,))
 
         # Initialize safe set trajectories parameter
-        self.safe_set_states = cvxpy.Parameter(xSS.shape)
-        self.safe_set_states.value = xSS
+        self.safe_set_states = cvxpy.Parameter((self.config.numSS_Points, self.config.NX))
+        self.safe_set_states.value = np.zeros((self.config.numSS_Points, self.config.NX))
 
         # Initialize safe set trajectories parameter
-        self.safe_set_values = cvxpy.Parameter(vSS.shape)
-        self.safe_set_values.value = vSS
+        self.safe_set_values = cvxpy.Parameter((self.config.numSS_Points, 1))
+        self.safe_set_values.value = np.zeros((self.config.numSS_Points, 1))
 
         # Formulate and create the finite-horizon optimal control problem (objective function)
         # The FTOCP has the horizon of T timesteps
@@ -361,10 +359,18 @@ class LMPCPlanner:
         A_block = []
         B_block = []
         C_block = []
+        # init path to zeros
+        state_predict = np.zeros((self.config.NX, self.config.T + 1))
         for t in range(self.config.T):
+            current_state = Kinematic_State_Frenet(
+                state_predict[0, t],
+                state_predict[1, t],
+                state_predict[2, t],
+                state_predict[3, t],
+            )
             A, B, C = self.get_dynamic_model_matrix(
-                state_predict[:, t],
-                oa[t]
+                current_state,
+                np.zeros((self.config.NU,)),
             )
             A_block.append(A)
             B_block.append(B)
@@ -411,27 +417,25 @@ class LMPCPlanner:
             + (self.C_)
         ]
 
-        # Constraints 2: Steering Speed in each timestep must be lower than Max Steering Speed
-        constraints += [cvxpy.abs(cvxpy.diff(self.u[0, :])) <= self.config.MAX_STEER_V]
-
-        # Constraints 3: Create the constraints (upper and lower bounds of states and inputs) for the optimization problem
+        # Constraints 2: Initial state constraint x0 = x[0]
         constraints += [self.x[:, 0] == self.x0]  # [s, ey, epsi, v]
 
-        # Constraint 4: Terminal state constraint (lambda_f.T * xSS) == x[:, -1]
-        constraints += [self.lambda_f.T @ self.safe_set_states == self.x[:, -1]]
+        # Constraint 3: Terminal state constraint (lambda_f.T * xSS) == x[N]
+        constraints += [cvxpy.vec(self.lambda_f.T @ self.safe_set_states) == self.x[:, -1]]
 
+        # Constraints 5: State and Input Constraints
         constraints += [
-            self.x[0, :] <= self.config.MAX_SPEED
-        ]  # State 0: Velocity must be lower than Max Velocity
+            self.x[1, :] <= self.config.TRACK_WIDTH/2
+        ]  # State 1: Signed Lateral Error must be lower than half of the track width
         constraints += [
-            self.x[0, :] >= self.config.MIN_SPEED
-        ]  # State 0: Velocity must be higher than Min Velocity
+            self.x[1, :] >= -self.config.TRACK_WIDTH/2
+        ]  # State 1: Signed Lateral Error must be higher than negative half of the track width
         constraints += [
-            self.x[4, :] <= self.config.TRACK_WIDTH/2
-        ]  # State 4: Velocity must be lower than Max Velocity
+            self.x[3, :] <= self.config.MAX_SPEED
+        ]  # State 3: Velocity must be lower than Max Velocity
         constraints += [
-            self.x[4, :] >= -self.config.TRACK_WIDTH/2
-        ]  # State 4: Velocity must be higher than Min Velocity
+            self.x[3, :] >= self.config.MIN_SPEED
+        ]  # State 3: Velocity must be higher than Min Velocity
         constraints += [
             cvxpy.abs(self.u[0, :]) <= self.config.MAX_ACCEL
         ]  # Input 1: Acceleration must be lower than max acceleration

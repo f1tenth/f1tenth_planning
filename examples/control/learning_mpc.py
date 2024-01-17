@@ -74,6 +74,9 @@ def main():
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
 
+    # Initialize LMPC
+    lmpc = LMPCPlanner(track=env.track)
+
     # reset environment
     poses = np.array(
         [
@@ -90,10 +93,6 @@ def main():
 
     total_time = 0.0
     desired_laps = 5
-
-    xSS = []
-    uSS = []
-    vSS = []
 
     curr_trajectory = np.zeros((0, 7))
     curr_controls = np.zeros((0, planner.config.NU))
@@ -130,9 +129,7 @@ def main():
 
             # Increasing from 0 to length of trajectory 
             curr_values = np.array([np.arange(0, curr_trajectory.shape[0], 1)])
-            xSS.append(curr_trajectory)
-            uSS.append(curr_controls)
-            vSS.append(curr_values)
+            lmpc.update_safe_set(curr_trajectory, curr_controls, curr_values)
 
             curr_trajectory = np.zeros((0, 7))
             curr_controls = np.zeros((0, planner.config.NU))
@@ -144,8 +141,8 @@ def main():
             terminated = False
             
     # Scatter xSS x,y colored with vSS
-    for i in range(len(xSS)):
-        plt.scatter(xSS[i][:,0], xSS[i][:,1], c=vSS[i])
+    for i in range(len(lmpc.SS_trajectories)):
+        plt.scatter(lmpc.SS_trajectories[i][:,0], lmpc.SS_trajectories[i][:,1], c=lmpc.vSS_trajectories[i])
     plt.show()
 
     print("Sim elapsed time:", total_time, "Real elapsed time:", time.time() - start)
