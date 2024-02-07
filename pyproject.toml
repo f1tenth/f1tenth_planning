@@ -31,7 +31,7 @@ numba = "*"
 numpy = "*"
 qdldl = "*"
 pyyaml = "*"
-f1tenth_gym = { git = "https://github.com/f1tenth/f1tenth_gym.git", branch = "dev_packaging_update"}
+f1tenth_gym = { git = "https://github.com/f1tenth/f1tenth_gym.git", branch = "dev_packaging_update"}    # todo: change to v1.0.0
 
 
 [build-system]
