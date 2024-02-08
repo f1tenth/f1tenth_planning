@@ -1,42 +1,12 @@
-# MIT License
-
-# Copyright (c) Hongrui Zheng, Johannes Betz
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-"""
-Dynamic Single Track MPC waypoint tracker
-
-Author: Hongrui Zheng, Johannes Betz, Ahmad Amine
-Last Modified: 8/1/22
-"""
-
 import math
 from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 import cvxpy
 import numpy as np
-from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
+from f1tenth_planning.utils.utils import nearest_point
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
-from pyglet.gl import GL_POINTS
 
 
 @dataclass

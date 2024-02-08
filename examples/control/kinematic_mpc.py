@@ -1,35 +1,5 @@
-# MIT License
-
-# Copyright (c) Hongrui Zheng, Johannes Betz
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-"""
-STMPC waypoint tracker example
-
-Author: Hongrui Zheng
-Last Modified: 8/1/22
-"""
-
 import numpy as np
 import gymnasium as gym
-from f110_gym.envs import F110Env
 import time
 
 from f1tenth_planning.control.kinematic_mpc.kinematic_mpc import KMPCPlanner
@@ -42,37 +12,27 @@ def main():
     """
 
     # create environment
-    env: F110Env = gym.make(
+    env = gym.make(
         "f110_gym:f110-v0",
         config={
             "map": "Spielberg",
             "num_agents": 1,
             "control_input": "accl",
             "observation_config": {"type": "dynamic_state"},
+            "reset_config": {"type": "rl_grid_random"},
         },
         render_mode="human",
     )
 
     # create planner
-    planner = KMPCPlanner(track=env.track, debug=False)
-    planner.config.dlk = (
-        env.track.raceline.ss[1] - env.track.raceline.ss[0]
-    )  # waypoint spacing
+    track = env.unwrapped.track
+    planner = KMPCPlanner(track=track, debug=False)
+    planner.config.dlk = track.raceline.ss[1] - track.raceline.ss[0]
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
 
-    # reset environment
-    poses = np.array(
-        [
-            [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
-            ]
-        ]
-    )
-    obs, info = env.reset(options={"poses": poses})
+    obs, info = env.reset()
     done = False
     env.render()
 
