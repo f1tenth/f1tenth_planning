@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "f1tenth-planning"
+version = "0.1.1"
+description = "F1TENTH Motion Planning Library"
+license = "MIT"
+authors = [
+    "Hongrui Zheng",
+    "Renukanandan Tumu",
+    "Luigi Berducci",
+    "Ahmad Amine",
+]
+maintainers = [
+    "Hongrui Zheng",
+]
+readme = "README.md"
+homepage = "https://f1tenth.org"
+repository = "https://github.com/f1tenth/f1tenth_planning"
+documentation = "https://f1tenth-gym.readthedocs.io/en/latest/"
+packages = [
+    { include = "f1tenth_planning", from = "." },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<=3.11"
+cvxpy = "*"
+osqp = "*"
+kiwisolver = "*"
+scs = "*"
+llvmlite = "*"
+numba = "*"
+numpy = "*"
+qdldl = "*"
+pyyaml = "*"
+f1tenth_gym = { git = "https://github.com/f1tenth/f1tenth_gym.git", branch = "dev_packaging_update"}    # todo: change to v1.0.0
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
