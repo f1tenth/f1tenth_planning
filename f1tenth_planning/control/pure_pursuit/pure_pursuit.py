@@ -28,7 +28,8 @@ Last Modified: 5/4/22
 """
 from f110_gym.envs.track import Track
 
-from f1tenth_planning.control.controller import Controller, load_params
+from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.utils.loading import load_params
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_actuation

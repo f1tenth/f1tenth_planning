@@ -1,10 +1,9 @@
 import os
 
 import gymnasium as gym
-import f110_gym
 import unittest
 
-from f1tenth_planning.control.controller import load_params
+from f1tenth_planning.utils.loading import load_params
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
