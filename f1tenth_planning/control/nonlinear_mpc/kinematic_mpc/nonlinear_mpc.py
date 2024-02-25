@@ -91,13 +91,53 @@ class NMPCPlanner:
         Callback to render the lookahead point.
         """
         if self.ox is not None and self.oy is not None:
-            e.render_lines(np.array([self.ox, self.oy]).T, color=(0, 0, 128), size=2)
-
-    def plan(self, states, waypoints=None):
-        return 
+            e.render_lines(np.array([self.ox, self.oy]).T, color=(0, 0, 128), size=2) 
     
-    def calc_ref_trajectory_kinematic(self, state, cx, cy, cyaw, sp):
-        return 
+    def calc_ref_trajectory(self, state, cx, cy, cyaw, sp):
+        """
+        calc referent trajectory ref_traj in T steps: [x, y, v, yaw]
+        using the current velocity, calc the T points along the reference path
+        :param cx: Course X-Position
+        :param cy: Course y-Position
+        :param cyaw: Course Heading
+        :param sp: speed profile
+        :dl: distance step
+        :pind: Setpoint Index
+        :return: reference trajectory ref_traj, reference steering angle
+        """
+
+        # Create placeholder Arrays for the reference trajectory for T steps
+        ref_traj = np.zeros((self.config.NXK, self.config.TK + 1))
+        ncourse = len(cx)
+
+        # Find nearest index/setpoint from where the trajectories are calculated
+        _, _, _, ind = nearest_point(np.array([state.x, state.y]), np.array([cx, cy]).T)
+
+        # Load the initial parameters from the setpoint into the trajectory
+        ref_traj[0, 0] = cx[ind]
+        ref_traj[1, 0] = cy[ind]
+        ref_traj[2, 0] = sp[ind]
+        ref_traj[3, 0] = cyaw[ind]
+
+        # based on current velocity, distance traveled on the ref line between time steps
+        travel = abs(state.v) * self.config.DTK
+        dind = travel / self.config.dlk
+        ind_list = int(ind) + np.insert(
+            np.cumsum(np.repeat(dind, self.config.TK)), 0, 0
+        ).astype(int)
+        ind_list[ind_list >= ncourse] -= ncourse
+        ref_traj[0, :] = cx[ind_list]
+        ref_traj[1, :] = cy[ind_list]
+        ref_traj[2, :] = sp[ind_list]
+        cyaw[cyaw - state.yaw > 4.5] = np.abs(
+            cyaw[cyaw - state.yaw > 4.5] - (2 * np.pi)
+        )
+        cyaw[cyaw - state.yaw < -4.5] = np.abs(
+            cyaw[cyaw - state.yaw < -4.5] + (2 * np.pi)
+        )
+        ref_traj[3, :] = cyaw[ind_list]
+
+        return ref_traj
     
     def mpc_prob_init(self):
         
@@ -271,3 +311,41 @@ class NMPCPlanner:
 
         # Return the first control action
         return self.oa[0], self.odelta_v[0]
+
+    def plan(self, current_state):
+        """
+        Plan a trajectory using the NMPC controller.
+
+        Args:
+            current_state (f1tenth_gym_ros.msg.State): current state of the vehicle
+
+        Returns:
+            (float, float): steering angle and acceleration
+        """
+        if self.waypoints is None:
+            raise ValueError(
+                "Please set waypoints to track during planner instantiation or when calling plan()"
+            )
+        x0 = ca.vertcat([current_state["pose_x"],
+                       current_state["pose_y"],
+                       current_state["delta"],
+                       current_state["linear_vel_x"],
+                       current_state["pose_theta"]])
+            
+        # find the nearest waypoint to the vehicle
+        nearest_point_index = nearest_point(
+            current_state.x, current_state.y, self.waypoints
+        )
+
+        # calculate the reference trajectory
+        self.ref_path = self.calc_ref_trajectory_kinematic(
+            current_state, self.waypoints[0], self.waypoints[1], self.waypoints[2], self.waypoints[3]
+        )
+
+        # Goal state is the last point in the reference trajectory
+        goal_state = self.ref_path[:, -1]
+
+        # solve the NMPC problem
+        oa, odelta_v = self.mpc_prob_solve(goal_state, current_state)
+
+        return oa, odelta_v
