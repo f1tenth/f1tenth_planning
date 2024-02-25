@@ -9,7 +9,7 @@ import casadi as ca
 
 @dataclass
 class mpc_config:
-    NXK: int = 5  # length of kinematic state vector: z = [x, y, v, yaw, steer]
+    NXK: int = 5  # length of kinematic state vector: z = [x, y, delta, v, yaw]
     NU: int = 2  # length of input vector: u = = [steering speed, acceleration]
     TK: int = 8  # finite time horizon length kinematic
     Rk: list = field(
@@ -19,11 +19,11 @@ class mpc_config:
         default_factory=lambda: np.diag([0.01, 100.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
-    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, v, yaw]
+        default_factory=lambda: np.diag([18.5, 18.5, 0.0, 3.5, 0.1])
+    )  # state error cost matrix, for the the next (T) prediction time steps [x, y, delta, v, yaw]
     Qfk: list = field(
-        default_factory=lambda: np.diag([18.5, 18.5, 3.5, 0.1])
-    )  # final state error matrix, penalty  for the final state constraints: [x, y, v, yaw]
+        default_factory=lambda: np.diag([18.5, 18.5, 0.0, 3.5, 0.1])
+    )  # final state error matrix, penalty  for the final state constraints: [x, y, delta, v, yaw]
     N_IND_SEARCH: int = 20  # Search index number
     DTK: float = 0.1  # time step [s] kinematic
     dlk: float = 0.03  # dist step [m] kinematic
@@ -111,7 +111,7 @@ class NMPCPlanner:
         ncourse = len(cx)
 
         # Find nearest index/setpoint from where the trajectories are calculated
-        _, _, _, ind = nearest_point(np.array([state.x, state.y]), np.array([cx, cy]).T)
+        _, _, _, ind = nearest_point(np.array([state["pose_x"], state["pose_y"]]), np.array([cx, cy]).T)
 
         # Load the initial parameters from the setpoint into the trajectory
         ref_traj[0, 0] = cx[ind]
@@ -120,7 +120,7 @@ class NMPCPlanner:
         ref_traj[3, 0] = cyaw[ind]
 
         # based on current velocity, distance traveled on the ref line between time steps
-        travel = abs(state.v) * self.config.DTK
+        travel = abs(state["linear_vel_x"]) * self.config.DTK
         dind = travel / self.config.dlk
         ind_list = int(ind) + np.insert(
             np.cumsum(np.repeat(dind, self.config.TK)), 0, 0
@@ -129,11 +129,11 @@ class NMPCPlanner:
         ref_traj[0, :] = cx[ind_list]
         ref_traj[1, :] = cy[ind_list]
         ref_traj[2, :] = sp[ind_list]
-        cyaw[cyaw - state.yaw > 4.5] = np.abs(
-            cyaw[cyaw - state.yaw > 4.5] - (2 * np.pi)
+        cyaw[cyaw - state["pose_theta"] > 4.5] = np.abs(
+            cyaw[cyaw - state["pose_theta"] > 4.5] - (2 * np.pi)
         )
-        cyaw[cyaw - state.yaw < -4.5] = np.abs(
-            cyaw[cyaw - state.yaw < -4.5] + (2 * np.pi)
+        cyaw[cyaw - state["pose_theta"] < -4.5] = np.abs(
+            cyaw[cyaw - state["pose_theta"] < -4.5] + (2 * np.pi)
         )
         ref_traj[3, :] = cyaw[ind_list]
 
@@ -141,11 +141,11 @@ class NMPCPlanner:
     
     def mpc_prob_init(self):
         
-        x = ca.SX.sym("x"),
-        y = ca.SX.sym("y"),
-        delta = ca.SX.sym("delta"),
-        v = ca.SX.sym("v"),
-        yaw = ca.SX.sym("yaw"),
+        x = ca.SX.sym('x')
+        y = ca.SX.sym('y')
+        delta = ca.SX.sym('delta')
+        v = ca.SX.sym('v')
+        yaw = ca.SX.sym('yaw')
         states = ca.vertcat(
             x,
             y,
@@ -184,11 +184,11 @@ class NMPCPlanner:
         fsteer = lambda delta, vdelta: vdelta # ideal, continuous time steering-speed
         facc = lambda speed, along: along # ideal, continuous time acceleration
         RHS = ca.vertcat(
-                            x[3] * ca.cos(x[4]),  # dx/dt = v * cos(yaw)
-                            x[3] * ca.sin(x[4]),  # dy/dt = v * sin(yaw)
-                            u[1],  # d(delta)/dt = delta_v
-                            u[0],  # dv/dt = a
-                            (x[3]/(self.config.WHEELBASE)) * ca.tan(x[2])  # dyaw/dt = (v/(Lx+Ly)) * tan(delta)
+                            v * ca.cos(yaw),  # dx/dt = v * cos(yaw)
+                            v * ca.sin(yaw),  # dy/dt = v * sin(yaw)
+                            delta_v,  # d(delta)/dt = delta_v
+                            a,  # dv/dt = a
+                            (v/(self.config.WHEELBASE)) * ca.tan(delta)  # dyaw/dt = (v/(Lx+Ly)) * tan(delta)
                         ) # dx/dt = f(x,u)
 
         # maps controls from [va, vb, vc, vd].T to [vx, vy, omega].T
@@ -198,7 +198,7 @@ class NMPCPlanner:
         g = X[:, 0] - P[:, 0]  # x(0) = x0 constraint in the equation
 
         # runge kutta
-        for k in range(N):
+        for k in range(self.config.TK):
             st = X[:, k]
             con = U[:, k]
             cost_fn = cost_fn \
@@ -278,17 +278,21 @@ class NMPCPlanner:
         return
     
     def mpc_prob_solve(self, goal_state, x0):
-
-        # ref_path is goal_state repeated TK times
-        self.ref_path = np.array([goal_state for _ in range(self.config.TK+1)]).T
+        curr_state = ca.vertcat(
+            x0["pose_x"],
+            x0["pose_y"],
+            x0["delta"],
+            x0["linear_vel_x"],
+            x0["pose_theta"]
+        )
 
         self.args['p'] = ca.horzcat(
-            x0,    # current state
+            curr_state,    # current state
             ca.repmat(goal_state, 1, self.config.TK)   # target state
         )
         # optimization variable current state
         self.args['x0'] = ca.vertcat(
-            ca.reshape(x0, self.config.NXK*(self.config.TK+1), 1),
+            ca.reshape(ca.repmat(curr_state, 1, self.config.TK+1), self.config.NXK*(self.config.TK+1), 1),
             ca.reshape(self.U0, self.config.NU*self.config.TK, 1)
         )
         sol = self.solver(
@@ -332,13 +336,8 @@ class NMPCPlanner:
                        current_state["linear_vel_x"],
                        current_state["pose_theta"]])
             
-        # find the nearest waypoint to the vehicle
-        nearest_point_index = nearest_point(
-            current_state.x, current_state.y, self.waypoints
-        )
-
         # calculate the reference trajectory
-        self.ref_path = self.calc_ref_trajectory_kinematic(
+        self.ref_path = self.calc_ref_trajectory(
             current_state, self.waypoints[0], self.waypoints[1], self.waypoints[2], self.waypoints[3]
         )
 
