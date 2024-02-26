@@ -6,8 +6,6 @@ import numpy as np
 import gymnasium as gym
 from f110_gym.envs import F110Env
 import time
-import sys
-sys.path.append("C:\\Users\\Ahmad\\Desktop\\F1tenth\\f1tenth_planning")
 
 from f1tenth_planning.control.nonlinear_mpc.nonlinear_mpc import NMPCPlanner
 
@@ -57,7 +55,7 @@ def main():
     laptime = 0.0
     start = time.time()
     while not done:
-        steerv, accl = planner.plan(obs["agent_0"])
+        accl, steerv = planner.plan(obs["agent_0"])
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steerv, accl]])
         )

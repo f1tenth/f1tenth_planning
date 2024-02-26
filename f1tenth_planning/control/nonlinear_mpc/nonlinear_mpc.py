@@ -116,8 +116,9 @@ class NMPCPlanner:
         # Load the initial parameters from the setpoint into the trajectory
         ref_traj[0, 0] = cx[ind]
         ref_traj[1, 0] = cy[ind]
-        ref_traj[2, 0] = sp[ind]
-        ref_traj[3, 0] = cyaw[ind]
+
+        ref_traj[3, 0] = sp[ind]
+        ref_traj[4, 0] = cyaw[ind]
 
         # based on current velocity, distance traveled on the ref line between time steps
         travel = abs(state["linear_vel_x"]) * self.config.DTK
@@ -128,14 +129,14 @@ class NMPCPlanner:
         ind_list[ind_list >= ncourse] -= ncourse
         ref_traj[0, :] = cx[ind_list]
         ref_traj[1, :] = cy[ind_list]
-        ref_traj[2, :] = sp[ind_list]
+        ref_traj[3, :] = sp[ind_list]
         cyaw[cyaw - state["pose_theta"] > 4.5] = np.abs(
             cyaw[cyaw - state["pose_theta"] > 4.5] - (2 * np.pi)
         )
         cyaw[cyaw - state["pose_theta"] < -4.5] = np.abs(
             cyaw[cyaw - state["pose_theta"] < -4.5] + (2 * np.pi)
         )
-        ref_traj[3, :] = cyaw[ind_list]
+        ref_traj[4, :] = cyaw[ind_list]
 
         return ref_traj
     
@@ -227,7 +228,7 @@ class NMPCPlanner:
         ipopt_opts = {
             'ipopt': {
                 'print_level': 0,
-                'max_iter': 1000,
+                'max_iter': 200,
                 'acceptable_tol': 1e-8,
                 'acceptable_obj_change_tol': 1e-6,
                 'warm_start_init_point': 'yes',
