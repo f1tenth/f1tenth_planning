@@ -81,9 +81,10 @@ def main():
     poses = np.array(
         [
             [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
+                0.0
             ]
         ]
     )
@@ -110,6 +111,17 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
+        frenet_kinematic_pose = env.track.cartesian_to_frenet(np.array([curr_state[0, 0], curr_state[0, 1], curr_state[0, 4]]))
+        curr_state_frenet = np.array([
+                                [frenet_kinematic_pose[0],
+                                frenet_kinematic_pose[1],
+                                obs["agent_0"]["delta"],
+                                obs["agent_0"]["linear_vel_x"],
+                                frenet_kinematic_pose[2],
+                                obs["agent_0"]["ang_vel_z"],
+                                obs["agent_0"]["beta"]]
+                              ])
+        
         steerv, accl = planner.plan(obs["agent_0"])
         if planner.xk.value is not None:
             lmpc.update_zt(planner.xk.value)
@@ -119,7 +131,7 @@ def main():
         env.render()
 
         curr_controls = np.vstack((curr_controls, np.array([[steerv, accl]])))
-        curr_trajectory = np.vstack((curr_trajectory, curr_state))
+        curr_trajectory = np.vstack((curr_trajectory, curr_state_frenet))
 
         print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
 
@@ -142,8 +154,17 @@ def main():
             terminated = False
             
     # Scatter xSS x,y colored with vSS
-    for i in range(len(lmpc.SS_trajectories)):
-        plt.scatter(lmpc.SS_trajectories[i][:,0], lmpc.SS_trajectories[i][:,1], c=lmpc.vSS_trajectories[i])
+    for i in range(len(lmpc.SS_trajectories) - 1):
+        # CONVERT FRENET BACK TO CARTESIAN
+        traj_x = []
+        traj_y = []
+        for state in lmpc.SS_trajectories[i]:
+            cartesian_pose = env.track.frenet_to_cartesian(np.array([state[0], state[1], state[4]]))
+            traj_x.append(cartesian_pose[0])
+            traj_y.append(cartesian_pose[1])
+        traj_x = np.array(traj_x)
+        traj_y = np.array(traj_y)
+        plt.scatter(traj_x, traj_y, c=lmpc.vSS_trajectories[i])
     # Plot zt for reference
     plt.scatter(lmpc.zt[0], lmpc.zt[1], c='r', s=50, marker='x')
     # Plot current position
