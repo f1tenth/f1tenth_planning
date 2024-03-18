@@ -59,7 +59,7 @@ def main():
     # create environment
     env : F110Env = gym.make('f110_gym:f110-v0',
                             config={
-                                "map": "Rounded_Rectangle",
+                                "map": "IMS",
                                 "num_agents": 1,
                                 "control_input": "accl",
                                 "observation_config": {"type": "features", 
@@ -93,7 +93,7 @@ def main():
     env.render()
 
     total_time = 0.0
-    desired_laps = 5
+    desired_laps = 1
 
     curr_trajectory = np.zeros((0, 7))
     curr_controls = np.zeros((0, planner.config.NU))
@@ -111,7 +111,7 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
-        frenet_kinematic_pose = env.track.cartesian_to_frenet(np.array([curr_state[0, 0], curr_state[0, 1], curr_state[0, 4]]))
+        frenet_kinematic_pose = env.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4])
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
@@ -154,12 +154,12 @@ def main():
             terminated = False
             
     # Scatter xSS x,y colored with vSS
-    for i in range(len(lmpc.SS_trajectories) - 1):
+    for i in range(len(lmpc.SS_trajectories)):
         # CONVERT FRENET BACK TO CARTESIAN
         traj_x = []
         traj_y = []
         for state in lmpc.SS_trajectories[i]:
-            cartesian_pose = env.track.frenet_to_cartesian(np.array([state[0], state[1], state[4]]))
+            cartesian_pose = env.track.frenet_to_cartesian(state[0], state[1], state[4])
             traj_x.append(cartesian_pose[0])
             traj_y.append(cartesian_pose[1])
         traj_x = np.array(traj_x)
