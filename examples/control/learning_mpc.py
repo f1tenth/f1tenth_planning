@@ -59,7 +59,7 @@ def main():
     # create environment
     env : F110Env = gym.make('f110_gym:f110-v0',
                             config={
-                                "map": "IMS",
+                                "map": "Rounded_Rectangle",
                                 "num_agents": 1,
                                 "control_input": "accl",
                                 "observation_config": {"type": "features", 
@@ -93,7 +93,7 @@ def main():
     env.render()
 
     total_time = 0.0
-    desired_laps = 1
+    desired_laps = 4
 
     curr_trajectory = np.zeros((0, 7))
     curr_controls = np.zeros((0, planner.config.NU))
@@ -101,7 +101,28 @@ def main():
     lap_count = 0
     start = time.time()
     first_done = False
+    completed_laps = 0
+    curr_state = np.array([
+                            [obs["agent_0"]["pose_x"],
+                            obs["agent_0"]["pose_y"],
+                            obs["agent_0"]["delta"],
+                            obs["agent_0"]["linear_vel_x"],
+                            obs["agent_0"]["pose_theta"],
+                            obs["agent_0"]["ang_vel_z"],
+                            obs["agent_0"]["beta"]]
+                            ])        
+    frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=0.0)
+    curr_state_frenet = np.array([
+                            [frenet_kinematic_pose[0],
+                            frenet_kinematic_pose[1],
+                            obs["agent_0"]["delta"],
+                            obs["agent_0"]["linear_vel_x"],
+                            frenet_kinematic_pose[2],
+                            obs["agent_0"]["ang_vel_z"],
+                            obs["agent_0"]["beta"]]
+                            ])
     while not done:
+        old_s = curr_state_frenet[0, 0]
         curr_state = np.array([
                                 [obs["agent_0"]["pose_x"],
                                 obs["agent_0"]["pose_y"],
@@ -111,7 +132,7 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
-        frenet_kinematic_pose = env.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4])
+        frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
@@ -122,6 +143,10 @@ def main():
                                 obs["agent_0"]["beta"]]
                               ])
         
+        if abs(old_s - curr_state_frenet[0, 0]) > 5:
+            print("S is not continuous, old_s: {}, new_s: {}".format(old_s, curr_state_frenet[0, 0]))
+            completed_laps += 1
+
         steerv, accl = planner.plan(obs["agent_0"])
         if planner.xk.value is not None:
             lmpc.update_zt(planner.xk.value)
@@ -135,40 +160,51 @@ def main():
 
         print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
 
-        if lap_count != obs["agent_0"]["lap_count"]:
-            lap_count = obs["agent_0"]["lap_count"]
+        if lap_count != completed_laps:
+            lap_count = completed_laps
             lap_time = obs["agent_0"]["lap_time"] - total_time
-            print("laps_completed: {} | lap_time: {}".format(obs["agent_0"]["lap_count"], lap_time))
+            print("laps_completed: {} | lap_time: {}".format(completed_laps, lap_time))
             total_time = obs["agent_0"]["lap_time"]
             print("Done: {}, Terminated: {}, Truncated: {}".format(done, terminated, truncated))
 
-            # Increasing from 0 to length of trajectory 
-            curr_values = np.array([np.arange(0, curr_trajectory.shape[0], 1)])
+            # decreasing from length of trajectory to 0
+            curr_values = np.arange(curr_trajectory.shape[0]-1, -1, -1).reshape(1,-1)
             lmpc.update_safe_set(curr_trajectory, curr_controls, curr_values)
 
             curr_trajectory = np.zeros((0, 7))
             curr_controls = np.zeros((0, planner.config.NU))
 
-        if done and (obs["agent_0"]["lap_count"] != desired_laps):
+        if done and (completed_laps != desired_laps):
             done = False
             terminated = False
+        
+        if completed_laps == desired_laps:
+            done = True
+
             
     # Scatter xSS x,y colored with vSS
     for i in range(len(lmpc.SS_trajectories)):
         # CONVERT FRENET BACK TO CARTESIAN
         traj_x = []
         traj_y = []
+        traj_s = []
         for state in lmpc.SS_trajectories[i]:
-            cartesian_pose = env.track.frenet_to_cartesian(state[0], state[1], state[4])
+            cartesian_pose = env.unwrapped.track.frenet_to_cartesian(state[0], state[1], state[4])
             traj_x.append(cartesian_pose[0])
             traj_y.append(cartesian_pose[1])
+            traj_s.append(state[0])
         traj_x = np.array(traj_x)
         traj_y = np.array(traj_y)
-        plt.scatter(traj_x, traj_y, c=lmpc.vSS_trajectories[i])
+        traj_s = np.array(traj_s)
+        plt.scatter(traj_x, traj_y, c=traj_s)
+                    #lmpc.vSS_trajectories[i])
+    plt.colorbar() # Colorbar before other scatter to ensure correct range
     # Plot zt for reference
     plt.scatter(lmpc.zt[0], lmpc.zt[1], c='r', s=50, marker='x')
     # Plot current position
     plt.scatter(curr_state[0,0], curr_state[0,1], c='g', s=50, marker='s')
+    # Plot raceline for reference
+    plt.plot(env.track.raceline.xs, env.track.raceline.ys, c='k')
     plt.show()
 
     print("Sim elapsed time:", total_time, "Real elapsed time:", time.time() - start)
