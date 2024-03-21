@@ -68,14 +68,14 @@ def main():
                             render_mode='human')
 
     # create planner
-    planner = KMPCPlanner(track=env.track, debug=False)
-    planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
+    planner = KMPCPlanner(track=env.unwrapped.track, debug=False)
+    planner.config.dlk = env.unwrapped.track.raceline.ss[1] - env.unwrapped.track.raceline.ss[0] # waypoint spacing
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
 
     # Initialize LMPC
-    lmpc = LMPCPlanner(track=env.track)
+    lmpc = LMPCPlanner(track=env.unwrapped.track)
 
     # reset environment
     poses = np.array(
@@ -95,8 +95,8 @@ def main():
     total_time = 0.0
     desired_laps = 4
 
-    curr_trajectory = np.zeros((0, 7))
-    curr_controls = np.zeros((0, planner.config.NU))
+    curr_trajectory = np.zeros((0, lmpc.config.NX))
+    curr_controls = np.zeros((0, lmpc.config.NU))
 
     lap_count = 0
     start = time.time()
@@ -115,11 +115,8 @@ def main():
     curr_state_frenet = np.array([
                             [frenet_kinematic_pose[0],
                             frenet_kinematic_pose[1],
-                            obs["agent_0"]["delta"],
-                            obs["agent_0"]["linear_vel_x"],
                             frenet_kinematic_pose[2],
-                            obs["agent_0"]["ang_vel_z"],
-                            obs["agent_0"]["beta"]]
+                            obs["agent_0"]["linear_vel_x"]]
                             ])
     while not done:
         old_s = curr_state_frenet[0, 0]
@@ -136,11 +133,8 @@ def main():
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
-                                obs["agent_0"]["delta"],
-                                obs["agent_0"]["linear_vel_x"],
                                 frenet_kinematic_pose[2],
-                                obs["agent_0"]["ang_vel_z"],
-                                obs["agent_0"]["beta"]]
+                                obs["agent_0"]["linear_vel_x"]]
                               ])
         
         if abs(old_s - curr_state_frenet[0, 0]) > 5:
@@ -171,8 +165,8 @@ def main():
             curr_values = np.arange(curr_trajectory.shape[0]-1, -1, -1).reshape(1,-1)
             lmpc.update_safe_set(curr_trajectory, curr_controls, curr_values)
 
-            curr_trajectory = np.zeros((0, 7))
-            curr_controls = np.zeros((0, planner.config.NU))
+            curr_trajectory = np.zeros((0, lmpc.config.NX))
+            curr_controls = np.zeros((0, lmpc.config.NU))
 
         if done and (completed_laps != desired_laps):
             done = False
@@ -189,7 +183,7 @@ def main():
         traj_y = []
         traj_s = []
         for state in lmpc.SS_trajectories[i]:
-            cartesian_pose = env.unwrapped.track.frenet_to_cartesian(state[0], state[1], state[4])
+            cartesian_pose = env.unwrapped.track.frenet_to_cartesian(state[0], state[1], state[-1])
             traj_x.append(cartesian_pose[0])
             traj_y.append(cartesian_pose[1])
             traj_s.append(state[0])
@@ -204,11 +198,68 @@ def main():
     # Plot current position
     plt.scatter(curr_state[0,0], curr_state[0,1], c='g', s=50, marker='s')
     # Plot raceline for reference
-    plt.plot(env.track.raceline.xs, env.track.raceline.ys, c='k')
+    plt.plot(env.unwrapped.track.raceline.xs, env.unwrapped.track.raceline.ys, c='k')
     plt.show()
 
     print("Sim elapsed time:", total_time, "Real elapsed time:", time.time() - start)
 
+    # Now switch to LMPC planning
+    done = False
+    while not done:
+        old_s = curr_state_frenet[0, 0]
+        curr_state = np.array([
+                                [obs["agent_0"]["pose_x"],
+                                obs["agent_0"]["pose_y"],
+                                obs["agent_0"]["delta"],
+                                obs["agent_0"]["linear_vel_x"],
+                                obs["agent_0"]["pose_theta"],
+                                obs["agent_0"]["ang_vel_z"],
+                                obs["agent_0"]["beta"]]
+                              ])        
+        frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
+        curr_state_frenet = np.array([
+                                [frenet_kinematic_pose[0],
+                                frenet_kinematic_pose[1],
+                                frenet_kinematic_pose[2],
+                                obs["agent_0"]["linear_vel_x"]]
+                              ])
+        
+        if abs(old_s - curr_state_frenet[0, 0]) > 5:
+            print("S is not continuous, old_s: {}, new_s: {}".format(old_s, curr_state_frenet[0, 0]))
+            completed_laps += 1
+
+        steerv, accl = lmpc.plan(obs["agent_0"])
+
+        obs, timestep, terminated, truncated, infos = env.step(np.array([[steerv, accl]]))
+        done = terminated or truncated
+        env.render()
+
+        curr_controls = np.vstack((curr_controls, np.array([[steerv, accl]])))
+        curr_trajectory = np.vstack((curr_trajectory, curr_state_frenet))
+
+        print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
+
+        if lap_count != completed_laps:
+            lap_count = completed_laps
+            lap_time = obs["agent_0"]["lap_time"] - total_time
+            print("laps_completed: {} | lap_time: {}".format(completed_laps, lap_time))
+            total_time = obs["agent_0"]["lap_time"]
+            print("Done: {}, Terminated: {}, Truncated: {}".format(done, terminated, truncated))
+
+            # decreasing from length of trajectory to 0
+            curr_values = np.arange(curr_trajectory.shape[0]-1, -1, -1).reshape(1,-1)
+            lmpc.update_safe_set(curr_trajectory, curr_controls, curr_values)
+
+            curr_trajectory = np.zeros((0, 7))
+            curr_controls = np.zeros((0, planner.config.NU))
+
+        if done and (completed_laps != desired_laps):
+            done = False
+            terminated = False
+        
+        if completed_laps == desired_laps:
+            done = True
+    
 
 if __name__ == '__main__':
     main()
