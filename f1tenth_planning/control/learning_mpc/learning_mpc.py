@@ -55,7 +55,8 @@ class lmpc_config:
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
     WB: float = 0.33  # Wheelbase [m]
-    MAX_STEER: float = 0.4189  # maximum absolute steering angle [rad]
+    MAX_STEER: float = 0.4189  # maximum steering angle [rad]
+    MIN_STEER: float = -0.4189  # minimum steering angle [rad]
     MAX_SPEED: float = 6.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum absolute acceleration [m/ss]
@@ -88,7 +89,9 @@ class LMPCPlanner:
         track,
         config=lmpc_config(),
     ):
+        self.track = track
         self.raceline = track.raceline # used for cartesian to frenet
+        self.centerline = track.centerline # used for curvature, cartesian to frenet, etc
         self.waypoints = [track.raceline.ss,                 # s_ref
                           np.zeros_like(track.raceline.vxs), # ey_ref
                           np.zeros_like(track.raceline.vxs), # epsi_ref
@@ -108,6 +111,7 @@ class LMPCPlanner:
         self.oy = None
         self.lmpc_prob_initialized = False
         self.lmpc_prob_init()
+        self.old_s = 0.0
 
     def plan(self, state):
         """
@@ -127,11 +131,21 @@ class LMPCPlanner:
             raise ValueError(
                 "Please set waypoints to track during planner instantiation or when calling plan()"
             )
+        curr_state = np.array([
+                                [state["pose_x"],
+                                state["pose_y"],
+                                state["delta"],
+                                state["linear_vel_x"],
+                                state["pose_theta"],
+                                state["ang_vel_z"],
+                                state["beta"]]
+                              ])        
+        frenet_kinematic_pose = self.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=self.old_s)
         vehicle_state = Kinematic_State_Frenet(
-            s=0, # TODO: add curvilinear abscissa, use cartesian to frenet
-            ey=0, # TODO: add lateral error, use cartesian to frenet
-            epsi=0, # TODO: add heading error, use cartesian to frenet
-            vx=state["linear_vel_x"]
+            s=frenet_kinematic_pose[0], # curvilinear abscissa
+            ey=frenet_kinematic_pose[1], # lateral error
+            epsi=frenet_kinematic_pose[2], # heading error
+            v=state["linear_vel_x"]
         )
 
         (
@@ -143,19 +157,19 @@ class LMPCPlanner:
             mpc_pred_y,
             mpc_ox,
             mpc_oy,
-        ) = self.MPC_Control(vehicle_state, self.waypoints)
+        ) = self.MPC_Control(vehicle_state)
 
         return steering_angle, accl
 
     def update_zt(self, mpc_solution):
         """
-        TODO: Update the reference target point based on the last mpc solution
+        Update the reference target point based on the last mpc solution
         """
         self.zt = mpc_solution[:, -1]
 
     def select_safe_subset(self, numSS_Points, num_SS_it, zt):
         """
-        TODO: Select the safe subset from the safe set
+        Select the safe subset from the safe set
         """
         xSS_selected = []
         vSS_selected = []
@@ -165,7 +179,7 @@ class LMPCPlanner:
         for iteration in range(len(self.SS_trajectories)-num_SS_it, len(self.SS_trajectories)):
             # select the closes numSS_Points to zt
             curr_trajectory = self.SS_trajectories[iteration]
-            curr_values = self.vSS_trajectories[iteration]
+            curr_values = self.vSS_trajectories[iteration][0] # converst it to flat array
             curr_control = self.uSS_trajectories[iteration]
 
             curr_distances = np.linalg.norm(curr_trajectory - zt, axis=1)
@@ -206,12 +220,12 @@ class LMPCPlanner:
         a = current_control_input[0]
         delta = current_control_input[1]
 
-        # TODO: Implement the linearized dynamic model of the vehicle
+        # linearized dynamic model of the vehicle
         A = np.zeros((self.config.NX, self.config.NX))
         B = np.zeros((self.config.NX, self.config.NU))
         C = np.zeros((self.config.NX,))
 
-        curvature = 0.0 # TODO: add curvature
+        curvature = self.centerline.spline.calc_curvature(current_state.s)
 
         # ∇_x(s); s = vcos(epsi)/(1 - ey*curvature)
         A[0, 1] = curvature * (current_state.v * np.cos(current_state.epsi)) / (1 - current_state.ey * curvature)**2 # ds/dey
@@ -233,7 +247,7 @@ class LMPCPlanner:
         A[3, 1] = 0.0                                                                                                 # dv/dey
         A[3, 2] = 0.0                                                                                                 # dv/depsi
 
-        # Forward Euler Discretization, TODO: maybe replace with exact discretization
+        # Forward Euler Discretization, maybe replace with exact discretization ?
         A = np.eye(self.config.NX) + A * self.config.DT
 
         # ∇_u(s); s = vcos(epsi)/(1 - ey*curvature)
@@ -268,16 +282,16 @@ class LMPCPlanner:
 
         return A, B, C
 
-    def predict_motion(self, x0, oa, od_v, xref, vehicle_params):
+    def predict_motion(self, x0, oa, od_v):
 
         # Create Vector that includes the predicted path for the next T time steps for all vehicle states
-        path_predict = xref * 0.0
+        path_predict = np.zeros((self.config.NX, self.config.T + 1))
         for i, _ in enumerate(x0):
             path_predict[i, 0] = x0[i]
 
         # Calculate/Predict the vehicle states/motion for the next T time steps
         state : Kinematic_State_Frenet = Kinematic_State_Frenet(
-             s=x0[0], ey=x0[1], epsi=x0[2], vx=x0[3],
+             s=x0[0], ey=x0[1], epsi=x0[2], v=x0[3],
         )
         for (ai, delta_i, i) in zip(oa, od_v, range(1, self.config.T + 1)):
             state = self.update_state(state, ai, delta_i)
@@ -302,7 +316,7 @@ class LMPCPlanner:
         elif delta <= self.config.MIN_STEER:
             delta = self.config.MIN_STEER
 
-        curvature = 0.0 # TODO: add curvature
+        curvature = self.centerline.spline.calc_curvature(state.s)
 
         state.s = state.s + ((state.v * np.cos(state.epsi)) / (1 - state.ey * curvature)) * self.config.DT
         state.ey = state.ey + (state.v * np.sin(state.epsi)) * self.config.DT
@@ -547,7 +561,7 @@ class LMPCPlanner:
             mpc_ey,
         )
 
-    def linear_lmpc_control(self, ref_path, x0, oa, od_v, vehicle_params):
+    def linear_lmpc_control(self, x0, oa, od_v):
         """
         MPC contorl with updating operational point iteraitvely
         :param ref_path: reference trajectory in T steps
@@ -562,15 +576,14 @@ class LMPCPlanner:
             od_v = [0.0] * self.config.T
 
         # Call the Motion Prediction function: Predict the vehicle motion/states for T time steps
-        state_predict = self.predict_motion(x0, oa, od_v, ref_path, vehicle_params)
+        state_predict = self.predict_motion(x0, oa, od_v)
 
-        # TODO: Get xSS subset and vSS subset from the safe set
-        xSS = None
-        vSS = None
+        # Get xSS subset and vSS subset from the safe set
+        xSS, vSS, uSS = self.select_safe_subset(self.config.numSS_Points, self.config.num_SS_it, self.zt)
 
         # -------------------- INITIALIZE MPC Problem ----------------------------------------
         if self.lmpc_prob_initialized == False:
-            self.lmpc_prob_init(ref_path, state_predict, x0, oa, vehicle_params)
+            self.lmpc_prob_init()
             self.lmpc_prob_initialized = True
 
         # Run the MPC optimization: Create and solve the optimization problem
@@ -584,7 +597,7 @@ class LMPCPlanner:
             mpc_yaw,
             mpc_yawrate,
             mpc_beta,
-        ) = self.lmpc_prob_solve(xSS, vSS, state_predict, x0, oa, vehicle_params)
+        ) = self.lmpc_prob_solve(xSS, vSS, state_predict, x0, oa)
 
         return (
             mpc_a,
