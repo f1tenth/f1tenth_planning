@@ -1,5 +1,5 @@
-from f110_gym.envs.track.cubic_spline import CubicSpline2D
-from f110_gym.envs.track.raceline import Raceline
+from f1tenth_gym.envs.track.cubic_spline import CubicSpline2D
+from f1tenth_gym.envs.track.raceline import Raceline
 from typing import Sequence
 import numpy as np
 import pathlib

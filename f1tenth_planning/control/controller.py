@@ -2,7 +2,7 @@ from __future__ import annotations
 from abc import abstractmethod, ABC
 
 import numpy as np
-from f110_gym.envs.track import Track
+from f1tenth_gym.envs.track import Track
 
 
 class Controller(ABC):

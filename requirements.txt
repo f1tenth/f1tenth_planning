@@ -1,4 +1,4 @@
--e git+https://github.com/f1tenth/f1tenth_gym.git@v1.0.0#egg=f110_gym
+-e git+https://github.com/f1tenth/f1tenth_gym.git@v1.0.0#egg=f1tenth_gym
 cvxpy
 cycler
 ecos

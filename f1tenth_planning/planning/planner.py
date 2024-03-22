@@ -2,7 +2,7 @@ from ..control.controller import Controller
 from ..utils.trajectory import Trajectory
 
 import numpy as np
-from f110_gym.envs.track import Track
+from f1tenth_gym.envs.track import Track
 from typing import Sequence, Union
 from abc import abstractmethod
 
