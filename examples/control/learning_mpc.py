@@ -84,8 +84,7 @@ def main():
                 # Use index 1 to avoid centerline start/finish line
                 env.unwrapped.track.centerline.xs[1],
                 env.unwrapped.track.centerline.ys[1],
-                env.unwrapped.track.centerline.yaws[1],
-                0.0
+                env.unwrapped.track.centerline.yaws[1]
             ]
         ]
     )
