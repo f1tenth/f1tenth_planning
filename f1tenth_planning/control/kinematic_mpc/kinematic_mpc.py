@@ -102,7 +102,7 @@ class KMPCPlanner:
         ),
         debug=False,
     ):
-        self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+        self.waypoints = [track.centerline.xs, track.centerline.ys, track.centerline.yaws, 6.0 * np.ones_like(track.centerline.vxs)]
         self.config = config
         self.vehicle_params = params
         self.odelta_v = None

@@ -69,7 +69,7 @@ def main():
 
     # create planner
     planner = KMPCPlanner(track=env.unwrapped.track, debug=False)
-    planner.config.dlk = env.unwrapped.track.raceline.ss[1] - env.unwrapped.track.raceline.ss[0] # waypoint spacing
+    planner.config.dlk = env.unwrapped.track.centerline.ss[1] - env.unwrapped.track.centerline.ss[0] # waypoint spacing
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
@@ -81,9 +81,10 @@ def main():
     poses = np.array(
         [
             [
-                env.unwrapped.track.raceline.xs[0],
-                env.unwrapped.track.raceline.ys[0],
-                env.unwrapped.track.raceline.yaws[0],
+                # Use index 1 to avoid centerline start/finish line
+                env.unwrapped.track.centerline.xs[1],
+                env.unwrapped.track.centerline.ys[1],
+                env.unwrapped.track.centerline.yaws[1],
                 0.0
             ]
         ]
@@ -137,7 +138,7 @@ def main():
                                 obs["agent_0"]["linear_vel_x"]]
                               ])
         
-        if abs(old_s - curr_state_frenet[0, 0]) > 5:
+        if abs(old_s - curr_state_frenet[0, 0]) > (env.unwrapped.track.raceline.ss[-1] * 0.5):
             print("S is not continuous, old_s: {}, new_s: {}".format(old_s, curr_state_frenet[0, 0]))
             completed_laps += 1
 
@@ -198,7 +199,7 @@ def main():
     # Plot current position
     plt.scatter(curr_state[0,0], curr_state[0,1], c='g', s=50, marker='s')
     # Plot raceline for reference
-    plt.plot(env.unwrapped.track.raceline.xs, env.unwrapped.track.raceline.ys, c='k')
+    plt.plot(env.unwrapped.track.centerline.xs, env.unwrapped.track.centerline.ys, c='k')
     plt.show()
 
     print("Sim elapsed time:", total_time, "Real elapsed time:", time.time() - start)
@@ -216,7 +217,7 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
-        frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
+        frenet_kinematic_pose = env.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
@@ -224,7 +225,7 @@ def main():
                                 obs["agent_0"]["linear_vel_x"]]
                               ])
         
-        if abs(old_s - curr_state_frenet[0, 0]) > 5:
+        if abs(old_s - curr_state_frenet[0, 0]) > (env.track.raceline.ss[-1] * 0.5):
             print("S is not continuous, old_s: {}, new_s: {}".format(old_s, curr_state_frenet[0, 0]))
             completed_laps += 1
 
