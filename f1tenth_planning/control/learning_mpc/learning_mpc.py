@@ -37,7 +37,6 @@ from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
 
-
 @dataclass
 class lmpc_config:
     NX: int = 4  # length of dynamic state vector: z = [s, ey, epsi, v]
@@ -62,7 +61,7 @@ class lmpc_config:
     MAX_ACCEL: float = 3.0  # maximum absolute acceleration [m/ss]
     TRACK_WIDTH: float = 0.31  # Width of the track [m]
     num_SS_it: int = 4  # Number of trajectories used at each iteration to build the safe set
-    numSS_Points = 48    # Number of points to select from each trajectory to build the safe set
+    numSS_Points_Per_it = 12    # Number of points to select from each trajectory to build the safe set
 
 
 @dataclass
@@ -150,16 +149,14 @@ class LMPCPlanner:
 
         (
             accl,
-            steering_angle,
-            mpc_ref_path_x,
-            mpc_ref_path_y,
-            mpc_pred_x,
-            mpc_pred_y,
-            mpc_ox,
-            mpc_oy,
-        ) = self.MPC_Control(vehicle_state)
+            steering_vel,
+            mpc_pred_s,
+            mpc_pred_ey,
+            mpc_os,
+            mpc_oey,
+        ) = self.LMPC_Control(vehicle_state, state["delta"])
 
-        return steering_angle, accl
+        return steering_vel, accl
 
     def update_zt(self, mpc_solution):
         """
@@ -167,7 +164,7 @@ class LMPCPlanner:
         """
         self.zt = mpc_solution[:, -1]
 
-    def select_safe_subset(self, numSS_Points, num_SS_it, zt):
+    def select_safe_subset(self, numSS_Points_Per_it, num_SS_it, zt):
         """
         Select the safe subset from the safe set
         """
@@ -182,21 +179,21 @@ class LMPCPlanner:
             curr_values = self.vSS_trajectories[iteration][0] # converst it to flat array
             curr_control = self.uSS_trajectories[iteration]
 
-            curr_distances = np.linalg.norm(curr_trajectory - zt, axis=1)
-            curr_sorted_indices = np.argsort(curr_distances)
+            curr_distances = np.abs(curr_trajectory[:,0] - zt[0]) # Only compare distances in curvilinear abscissa s, faster than calculating the whole distance
+            curr_selected_indices = np.argpartition(curr_distances, numSS_Points_Per_it)[:numSS_Points_Per_it] # argpartition is faster than argsort
 
-            traj_selected_states = curr_trajectory[curr_sorted_indices[:numSS_Points]]
-            traj_selected_values = curr_values[curr_sorted_indices[:numSS_Points]]
-            traj_selected_control = curr_control[curr_sorted_indices[:numSS_Points]]
+            traj_selected_states = curr_trajectory[curr_selected_indices]
+            traj_selected_values = curr_values[curr_selected_indices]
+            traj_selected_control = curr_control[curr_selected_indices]
 
             xSS_selected.append(traj_selected_states)
             vSS_selected.append(traj_selected_values)
             uSS_selected.append(traj_selected_control)
 
         # Convert to numpy arrays
-        xSS_selected = np.array(xSS_selected)
-        vSS_selected = np.array(vSS_selected)
-        uSS_selected = np.array(uSS_selected)
+        xSS_selected = np.concatenate(xSS_selected)
+        vSS_selected = np.concatenate(vSS_selected).reshape(-1,1)
+        uSS_selected = np.concatenate(uSS_selected)
         return xSS_selected, vSS_selected, uSS_selected
     
     def update_safe_set(self, xSS_new, uSS_new, vSS_new):
@@ -225,21 +222,23 @@ class LMPCPlanner:
         B = np.zeros((self.config.NX, self.config.NU))
         C = np.zeros((self.config.NX,))
 
-        curvature = self.centerline.spline.calc_curvature(current_state.s)
+        s, ey, epsi, v = current_state
+
+        curvature = self.centerline.spline.calc_curvature(s)
 
         # ∇_x(s); s = vcos(epsi)/(1 - ey*curvature)
-        A[0, 1] = curvature * (current_state.v * np.cos(current_state.epsi)) / (1 - current_state.ey * curvature)**2 # ds/dey
-        A[0, 2] = - current_state.v * np.sin(current_state.epsi) / (1 - current_state.ey * curvature)                # ds/depsi
-        A[0, 3] = np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                                    # ds/dv
+        A[0, 1] = curvature * (v * np.cos(epsi)) / (1 - ey * curvature)**2 # ds/dey
+        A[0, 2] = - v * np.sin(epsi) / (1 - ey * curvature)                # ds/depsi
+        A[0, 3] = np.cos(epsi) / (1 - ey * curvature)                                    # ds/dv
         
         # ∇_x(ey); ey = vsin(epsi)
         A[1, 0] = 0.0                                                                                                 # dey/ds
-        A[1, 2] = current_state.v * np.cos(current_state.epsi)                                                        # dey/depsi
-        A[1, 3] = np.sin(current_state.epsi)                                                                          # dey/dv
+        A[1, 2] = v * np.cos(epsi)                                                        # dey/depsi
+        A[1, 3] = np.sin(epsi)                                                                          # dey/dv
 
         # ∇_x(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
         A[2, 0] = 0.0                                                                                                 # depsi/ds
-        A[2, 1] = - current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                 # depsi/dey
+        A[2, 1] = - v * np.cos(epsi) / (1 - ey * curvature)                 # depsi/dey
         A[2, 3] = np.tan(current_control_input[1]) / self.config.WB                                                   # depsi/dv
 
         # ∇_x(v)
@@ -260,7 +259,7 @@ class LMPCPlanner:
 
         # ∇_u(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
         B[2, 0] = 0.0                                                                                                 # depsi/da
-        B[2, 1] = current_state.v / (self.config.WB * np.cos(current_control_input[1])**2)                            # depsi/ddelta
+        B[2, 1] = v / (self.config.WB * np.cos(current_control_input[1])**2)                            # depsi/ddelta
 
         # ∇_u(v)
         B[3, 0] = 1.0                                                                                                 # dv/da
@@ -271,18 +270,18 @@ class LMPCPlanner:
 
         # ∇_x(epsi); epsi = v*tan(delta)/WB - curvature*(vcos(epsi)/(1 - ey*curvature))
         A[2, 0] = 0.0                                                                                                 # depsi/ds
-        A[2, 1] = - current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature)                 # depsi/dey
+        A[2, 1] = - v * np.cos(epsi) / (1 - ey * curvature)                 # depsi/dey
         A[2, 3] = np.tan(current_control_input[1]) / self.config.WB                                                   # depsi/dv
 
         # C = A*x + B*u - (x + f(x,u))*dt)
-        C[0] = -(current_state.ey * (curvature * (current_state.v * np.cos(current_state.epsi)) / (1 - current_state.ey * curvature)**2) + current_state.epsi * (- current_state.v * np.sin(current_state.epsi) / (1 - current_state.ey * curvature))) * self.config.DT
-        C[1] = -(current_state.epsi * (current_state.v * np.cos(current_state.epsi))) * self.config.DT
-        C[2] = -(delta * current_state.v / (self.config.WB * np.cos(current_control_input[1])**2) - current_state.ey * current_state.v * np.cos(current_state.epsi) / (1 - current_state.ey * curvature) + current_state.v * np.tan(current_control_input[1]) / self.config.WB)* self.config.DT
+        C[0] = -(ey * (curvature * (v * np.cos(epsi)) / (1 - ey * curvature)**2) + epsi * (- v * np.sin(epsi) / (1 - ey * curvature))) * self.config.DT
+        C[1] = -(epsi * (v * np.cos(epsi))) * self.config.DT
+        C[2] = -(delta * v / (self.config.WB * np.cos(current_control_input[1])**2) - ey * v * np.cos(epsi) / (1 - ey * curvature) + v * np.tan(current_control_input[1]) / self.config.WB)* self.config.DT
         C[3] = 0.0
 
         return A, B, C
 
-    def predict_motion(self, x0, oa, od_v):
+    def predict_motion(self, x0, oa, od):
 
         # Create Vector that includes the predicted path for the next T time steps for all vehicle states
         path_predict = np.zeros((self.config.NX, self.config.T + 1))
@@ -293,7 +292,7 @@ class LMPCPlanner:
         state : Kinematic_State_Frenet = Kinematic_State_Frenet(
              s=x0[0], ey=x0[1], epsi=x0[2], v=x0[3],
         )
-        for (ai, delta_i, i) in zip(oa, od_v, range(1, self.config.T + 1)):
+        for (ai, delta_i, i) in zip(oa, od, range(1, self.config.T + 1)):
             state = self.update_state(state, ai, delta_i)
             path_predict[0, i] = state.s
             path_predict[1, i] = state.ey
@@ -334,8 +333,8 @@ class LMPCPlanner:
         Will be solved every iteration for control.
         More MPC problem information here: https://osqp.org/docs/examples/mpc.html
 
-        :param xSS: Safe Set States (numSS_Points, NX)
-        :param vSS: Safe Set Values (numSS_Points, 1)
+        :param xSS: Safe Set States (self.config.numSS_Points_Per_it * self.config.num_SS_it, NX)
+        :param vSS: Safe Set Values (self.config.numSS_Points_Per_it * self.config.num_SS_it, 1)
         :param state_predict: predicted states in T steps
         """
         # Initialize and create vectors for the optimization problem
@@ -343,7 +342,7 @@ class LMPCPlanner:
             (self.config.NX, self.config.T + 1)
         )  # Vehicle State Vector
         self.u = cvxpy.Variable((self.config.NU, self.config.T))  # Control Input vector
-        self.lambda_f = cvxpy.Variable((self.config.numSS_Points, 1)) # Lambda vector to calculate terminal cost
+        self.lambda_f = cvxpy.Variable((self.config.numSS_Points_Per_it * self.config.num_SS_it, 1)) # Lambda vector to calculate terminal cost
         objective = 0.0  # Objective value of the optimization problem, set to zero
         constraints = []  # Create constraints array
 
@@ -352,12 +351,12 @@ class LMPCPlanner:
         self.x0.value = np.zeros((self.config.NX,))
 
         # Initialize safe set trajectories parameter
-        self.safe_set_states = cvxpy.Parameter((self.config.numSS_Points, self.config.NX))
-        self.safe_set_states.value = np.zeros((self.config.numSS_Points, self.config.NX))
+        self.safe_set_states = cvxpy.Parameter((self.config.numSS_Points_Per_it * self.config.num_SS_it, self.config.NX))
+        self.safe_set_states.value = np.zeros((self.config.numSS_Points_Per_it * self.config.num_SS_it, self.config.NX))
 
         # Initialize safe set trajectories parameter
-        self.safe_set_values = cvxpy.Parameter((self.config.numSS_Points, 1))
-        self.safe_set_values.value = np.zeros((self.config.numSS_Points, 1))
+        self.safe_set_values = cvxpy.Parameter((self.config.numSS_Points_Per_it * self.config.num_SS_it, 1))
+        self.safe_set_values.value = np.zeros((self.config.numSS_Points_Per_it * self.config.num_SS_it, 1))
 
         # Formulate and create the finite-horizon optimal control problem (objective function)
         # The FTOCP has the horizon of T timesteps
@@ -376,11 +375,11 @@ class LMPCPlanner:
         # init path to zeros
         state_predict = np.zeros((self.config.NX, self.config.T + 1))
         for t in range(self.config.T):
-            current_state = Kinematic_State_Frenet(
+            current_state = np.array([
                 state_predict[0, t],
                 state_predict[1, t],
                 state_predict[2, t],
-                state_predict[3, t],
+                state_predict[3, t]]
             )
             A, B, C = self.get_dynamic_model_matrix(
                 current_state,
@@ -461,7 +460,7 @@ class LMPCPlanner:
         # Optimization goal: minimize the objective function with given constraints
         self.MPC_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
 
-    def lmpc_prob_solve(self, xSS, vSS, state_predict, x0, oa):
+    def lmpc_prob_solve(self, xSS, vSS, state_predict, x0, oa, odelta):
         """
         Solves MPC quadratic optimization problem initialized by mpc_prob_init using cvxpy, solver: OSQP
         Will be solved every iteration for control.
@@ -483,7 +482,7 @@ class LMPCPlanner:
         for t in range(self.config.T):
             A, B, C = self.get_dynamic_model_matrix(
                 state_predict[:, t],
-                oa[t],
+                np.array([oa[t], odelta[t]]),
             )
             A_block.append(A)
             B_block.append(B)
@@ -524,7 +523,7 @@ class LMPCPlanner:
             mpc_epsi = self.get_nparray_from_matrix(
                 self.x.value[2, :]
             )  # MPC-State: heading error
-            mpc_v = self.get_nparray_from_matrix(
+            mpc_vx = self.get_nparray_from_matrix(
                 self.x.value[3, :]
             )  # MPC-State: longitudinal velocity
             
@@ -540,28 +539,24 @@ class LMPCPlanner:
         else:
             print("Error: Cannot solve mpc..")
             (
-                mpc_a,
-                mpc_delta,
-                mpc_vx,
-                mpc_vy,
-                mpc_wz,
-                mpc_epsi,
                 mpc_s,
                 mpc_ey,
-            ) = (None, None, None, None, None, None, None, None, None)
+                mpc_epsi,
+                mpc_vx,
+                mpc_delta,
+                mpc_a,
+            ) = (None, None, None, None, None, None, None, None)
 
         return (
-            mpc_a,
-            mpc_delta,
-            mpc_vx,
-            mpc_vy,
-            mpc_wz,
-            mpc_epsi,
             mpc_s,
             mpc_ey,
+            mpc_epsi,
+            mpc_vx,
+            mpc_delta,
+            mpc_a,
         )
 
-    def linear_lmpc_control(self, x0, oa, od_v):
+    def linear_lmpc_control(self, x0, oa, od):
         """
         MPC contorl with updating operational point iteraitvely
         :param ref_path: reference trajectory in T steps
@@ -571,15 +566,15 @@ class LMPCPlanner:
         :return: acceleration and delta strategy based on current information
         """
 
-        if oa is None or od_v is None or oa.shape[0] < self.config.T:
+        if oa is None or od is None or oa.shape[0] < self.config.T:
             oa = [0.0] * self.config.T
-            od_v = [0.0] * self.config.T
+            od = [0.0] * self.config.T
 
         # Call the Motion Prediction function: Predict the vehicle motion/states for T time steps
-        state_predict = self.predict_motion(x0, oa, od_v)
+        state_predict = self.predict_motion(x0, oa, od)
 
         # Get xSS subset and vSS subset from the safe set
-        xSS, vSS, uSS = self.select_safe_subset(self.config.numSS_Points, self.config.num_SS_it, self.zt)
+        xSS, vSS, uSS = self.select_safe_subset(self.config.numSS_Points_Per_it, self.config.num_SS_it, self.zt)
 
         # -------------------- INITIALIZE MPC Problem ----------------------------------------
         if self.lmpc_prob_initialized == False:
@@ -588,31 +583,25 @@ class LMPCPlanner:
 
         # Run the MPC optimization: Create and solve the optimization problem
         (
-            mpc_a,
-            mpc_delta_v,
-            mpc_x,
-            mpc_y,
+            mpc_s,
+            mpc_ey,
+            mpc_epsi,
+            mpc_vx,
             mpc_delta,
-            mpc_v,
-            mpc_yaw,
-            mpc_yawrate,
-            mpc_beta,
-        ) = self.lmpc_prob_solve(xSS, vSS, state_predict, x0, oa)
+            mpc_a,
+        ) = self.lmpc_prob_solve(xSS, vSS, state_predict, x0, oa, od)
 
         return (
-            mpc_a,
-            mpc_delta_v,
-            mpc_x,
-            mpc_y,
+            mpc_s,
+            mpc_ey,
+            mpc_epsi,
+            mpc_vx,
             mpc_delta,
-            mpc_v,
-            mpc_yaw,
-            mpc_yawrate,
-            mpc_beta,
+            mpc_a,
             state_predict,
         )
 
-    def MPC_Control(self, vehicle_state : Kinematic_State_Frenet):
+    def LMPC_Control(self, vehicle_state : Kinematic_State_Frenet, curr_delta):
         
         # Create state vector based on current vehicle state: [s, ey, epsi, v]
         x0 = [
@@ -623,17 +612,14 @@ class LMPCPlanner:
         ]
 
         # Solve the Linear MPC Control problem and provide output
-        # Acceleration, Steering Speed, x-pos, y-pos, steering angle, speed, yaw, yawrate, side slip angle and Predicted sates
+        # Acceleration, Steering Speed, s-coordinate, lateral error, heading error, longitudinal velocity
         (
-            self.oa,
+            os,
+            oey,
+            oepsi,
+            ovx,
             self.odelta,
-            ox,
-            oy,
-            odelta,
-            ov,
-            oyaw,
-            oyawrate,
-            obeta,
+            self.oa,
             state_predict,
         ) = self.linear_lmpc_control(
             x0, self.oa, self.odelta
@@ -644,16 +630,15 @@ class LMPCPlanner:
 
         # Steering Output: First entry of the MPC steering speed output vector in rad/s
         # The F1TENTH Gym needs steering angle has a control input: Steering speed  -> Steering Angle
-        svel_output = self.odelta[0]
+        # Steering velocity is computed as (desired_steering_angle - current_steering_angle) / DT
+        svel_output = (di - curr_delta) / self.config.DT
         accl_output = self.oa[0]
 
         return (
             accl_output,
             svel_output,
-            None,
-            None,
             state_predict[0],
             state_predict[1],
-            ox,
-            oy,
+            os,
+            oey,
         )
