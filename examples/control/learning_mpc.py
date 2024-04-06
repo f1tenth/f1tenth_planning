@@ -142,9 +142,13 @@ def main():
             completed_laps += 1
 
         steerv, accl = planner.plan(obs["agent_0"])
-        if planner.xk.value is not None:
-            lmpc.update_zt(planner.xk.value)
 
+        # Update the LMPC zt for correct initial safe set selection
+        if planner.xk.value is not None:
+            pose_frenet = env.unwrapped.track.cartesian_to_frenet(planner.xk.value[0, -1], planner.xk.value[1, -1], planner.xk.value[2, -1], s_guess=old_s)
+            state_frenet = np.array([[pose_frenet[0], pose_frenet[1], pose_frenet[2], planner.xk.value[:, -1][3]]]).T
+            lmpc.update_zt(state_frenet)
+            
         obs, timestep, terminated, truncated, infos = env.step(np.array([[steerv, accl]]))
         done = terminated or truncated
         env.render()
@@ -182,19 +186,26 @@ def main():
         traj_x = []
         traj_y = []
         traj_s = []
+        traj_yaw = []
+        traj_eyaw = []
+        traj_values = lmpc.vSS_trajectories[i]
         for state in lmpc.SS_trajectories[i]:
-            cartesian_pose = env.unwrapped.track.frenet_to_cartesian(state[0], state[1], state[-1])
+            cartesian_pose = env.unwrapped.track.frenet_to_cartesian(state[0], state[1], state[2])
             traj_x.append(cartesian_pose[0])
             traj_y.append(cartesian_pose[1])
             traj_s.append(state[0])
+            traj_yaw.append(cartesian_pose[2])
+            traj_eyaw.append(state[2])
         traj_x = np.array(traj_x)
         traj_y = np.array(traj_y)
         traj_s = np.array(traj_s)
-        plt.scatter(traj_x, traj_y, c=traj_s)
+        traj_yaw = np.array(traj_yaw)
+        plt.scatter(traj_x, traj_y, c=traj_values)
                     #lmpc.vSS_trajectories[i])
     plt.colorbar() # Colorbar before other scatter to ensure correct range
     # Plot zt for reference
-    plt.scatter(lmpc.zt[0], lmpc.zt[1], c='r', s=50, marker='x')
+    zt_cart_pose = env.unwrapped.track.frenet_to_cartesian(lmpc.zt[0], lmpc.zt[1], lmpc.zt[2])
+    plt.scatter(zt_cart_pose[0], zt_cart_pose[1], c='r', s=50, marker='x')
     # Plot current position
     plt.scatter(curr_state[0,0], curr_state[0,1], c='g', s=50, marker='s')
     # Plot raceline for reference
@@ -205,6 +216,8 @@ def main():
 
     # Now switch to LMPC planning
     done = False
+    completed_laps = 0
+    lap_count = 0
     while not done:
         old_s = curr_state_frenet[0, 0]
         curr_state = np.array([
@@ -216,7 +229,7 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
-        frenet_kinematic_pose = env.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
+        frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
@@ -224,7 +237,7 @@ def main():
                                 obs["agent_0"]["linear_vel_x"]]
                               ])
         
-        if abs(old_s - curr_state_frenet[0, 0]) > (env.track.raceline.ss[-1] * 0.5):
+        if abs(old_s - curr_state_frenet[0, 0]) > (env.unwrapped.track.raceline.ss[-1] * 0.5):
             print("S is not continuous, old_s: {}, new_s: {}".format(old_s, curr_state_frenet[0, 0]))
             completed_laps += 1
 
