@@ -537,19 +537,19 @@ class KMPCPlanner:
             state_predict,
         ) = self.linear_mpc_control_kinematic(self.ref_path, x0, self.oa, self.odelta)
 
-        if self.action_type._longitudinal_action == 'accl':
+        if self.action_type._longitudinal_action.type == 'accl':
             accl_output = self.oa[0]
-        elif self.action_type._longitudinal_action == 'speed':
+        elif self.action_type._longitudinal_action.type == 'speed':
             accl_output = vehicle_state.v + self.oa[0] * self.config.DTK # Integrate acceleration to get speed using forward Euler
         else:
-            raise ValueError(f"Unknown longitudinal action type {self.action_type._longitudinal_action}")
+            raise ValueError(f"Unknown longitudinal action type {self.action_type._longitudinal_action.type}")
         
-        if self.action_type._steer_action == 'steering_angle':
+        if self.action_type._steer_action.type == 'steering_angle':
             sv_output = self.odelta[0]
-        elif self.action_type._steer_action == 'steering_speed':
+        elif self.action_type._steer_action.type == 'steering_speed':
             sv_output = (self.odelta[0] - vehicle_state.delta) / self.config.DTK # Derivative of steering angle using finite difference
         else:
-            raise ValueError(f"Unknown steering action type {self.action_type._steer_action}")
+            raise ValueError(f"Unknown steering action type {self.action_type._steer_action.type}")
 
         if self.debug:
             plt.cla()
