@@ -59,7 +59,7 @@ class lmpc_config:
     MAX_SPEED: float = 6.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 3.0  # maximum absolute acceleration [m/ss]
-    TRACK_WIDTH: float = 0.31  # Width of the track [m]
+    TRACK_WIDTH: float = 5  # Width of the track [m]
     num_SS_it: int = 4  # Number of trajectories used at each iteration to build the safe set
     numSS_Points_Per_it = 12    # Number of points to select from each trajectory to build the safe set
 
@@ -91,11 +91,6 @@ class LMPCPlanner:
         self.track = track
         self.raceline = track.raceline # used for cartesian to frenet
         self.centerline = track.centerline # used for curvature, cartesian to frenet, etc
-        self.waypoints = [track.raceline.ss,                 # s_ref
-                          np.zeros_like(track.raceline.vxs), # ey_ref
-                          np.zeros_like(track.raceline.vxs), # epsi_ref
-                          track.raceline.vxs]                # vx_ref 
-
         self.zt = None
 
         self.SS_trajectories = []  # iterations, length, states
@@ -126,10 +121,6 @@ class LMPCPlanner:
         if state["linear_vel_x"] < 0.1:
             return 0.0, self.config.MAX_ACCEL
 
-        if self.waypoints is None:
-            raise ValueError(
-                "Please set waypoints to track during planner instantiation or when calling plan()"
-            )
         curr_state = np.array([
                                 [state["pose_x"],
                                 state["pose_y"],
@@ -140,11 +131,12 @@ class LMPCPlanner:
                                 state["beta"]]
                               ])        
         frenet_kinematic_pose = self.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=self.old_s)
-        vehicle_state = Kinematic_State_Frenet(
-            s=frenet_kinematic_pose[0], # curvilinear abscissa
-            ey=frenet_kinematic_pose[1], # lateral error
-            epsi=frenet_kinematic_pose[2], # heading error
-            v=state["linear_vel_x"]
+        vehicle_state = np.array([
+            frenet_kinematic_pose[0], # curvilinear abscissa
+            frenet_kinematic_pose[1], # lateral error
+            frenet_kinematic_pose[2], # heading error
+            state["linear_vel_x"]     # longitudinal velocity
+            ]
         )
 
         (
@@ -342,7 +334,7 @@ class LMPCPlanner:
             (self.config.NX, self.config.T + 1)
         )  # Vehicle State Vector
         self.u = cvxpy.Variable((self.config.NU, self.config.T))  # Control Input vector
-        self.lambda_f = cvxpy.Variable((self.config.numSS_Points_Per_it * self.config.num_SS_it, 1)) # Lambda vector to calculate terminal cost
+        self.lambda_f = cvxpy.Variable((self.config.numSS_Points_Per_it * self.config.num_SS_it, 1), nonneg=True)# Lambda vector to calculate terminal cost
         objective = 0.0  # Objective value of the optimization problem, set to zero
         constraints = []  # Create constraints array
 
@@ -433,8 +425,11 @@ class LMPCPlanner:
         # Constraints 2: Initial state constraint x0 = x[0]
         constraints += [self.x[:, 0] == self.x0]  # [s, ey, epsi, v]
 
-        # Constraint 3: Terminal state constraint (lambda_f.T * xSS) == x[N]
-        constraints += [cvxpy.vec(self.lambda_f.T @ self.safe_set_states) == self.x[:, -1]]
+        # Constraint 3: Terminal state constraint ||(lambda_f.T * xSS) - x[N]|| <= epsilon
+        constraints += [cvxpy.abs(self.lambda_f.T @ self.safe_set_values - self.x[:, -1]) <= 0.1]
+
+        # Constraints 4: Convexity of the lambda decision variable
+        constraints += [cvxpy.sum(self.lambda_f) == 1]
 
         # Constraints 5: State and Input Constraints
         constraints += [
@@ -454,7 +449,7 @@ class LMPCPlanner:
         ]  # Input 1: Acceleration must be lower than max acceleration
         constraints += [
             cvxpy.abs(self.u[1, :]) <= self.config.MAX_STEER
-        ]  # Input 2: Steering Speed must be lower than Max Steering Speed
+        ]  # Input 2: Steering must be lower than Max Steering Speed
 
         # CREATE: Define the optimization problem object in CVXPY and setup the workspace
         # Optimization goal: minimize the objective function with given constraints
@@ -499,12 +494,9 @@ class LMPCPlanner:
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
         self.MPC_prob.solve(
-            solver=cvxpy.OSQP,
-            verbose=False,
-            warm_start=True,
-            enforce_dpp=True,
-            eps_rel=1e-1,
-            eps_abs=1e-1,
+            cvxpy.OSQP,
+            verbose=True,
+            warm_start=True
         )
         # print(f'optimal value with OSQP: {self.MPC_prob.value} | Took {self.MPC_prob._solve_time} seconds')
 
@@ -603,14 +595,6 @@ class LMPCPlanner:
 
     def LMPC_Control(self, vehicle_state : Kinematic_State_Frenet, curr_delta):
         
-        # Create state vector based on current vehicle state: [s, ey, epsi, v]
-        x0 = [
-            vehicle_state.s,
-            vehicle_state.ey,
-            vehicle_state.epsi,
-            vehicle_state.v
-        ]
-
         # Solve the Linear MPC Control problem and provide output
         # Acceleration, Steering Speed, s-coordinate, lateral error, heading error, longitudinal velocity
         (
@@ -622,21 +606,19 @@ class LMPCPlanner:
             self.oa,
             state_predict,
         ) = self.linear_lmpc_control(
-            x0, self.oa, self.odelta
+            vehicle_state, self.oa, self.odelta
         )
 
         if self.odelta is not None:
             di, ai = self.odelta[0], self.oa[0]
 
-        # Steering Output: First entry of the MPC steering speed output vector in rad/s
-        # The F1TENTH Gym needs steering angle has a control input: Steering speed  -> Steering Angle
-        # Steering velocity is computed as (desired_steering_angle - current_steering_angle) / DT
-        svel_output = (di - curr_delta) / self.config.DT
+        # Output the steering and acceleration commands
+        steering_output = di
         accl_output = self.oa[0]
 
         return (
             accl_output,
-            svel_output,
+            steering_output,
             state_predict[0],
             state_predict[1],
             os,
