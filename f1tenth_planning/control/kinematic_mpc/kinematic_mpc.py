@@ -35,7 +35,7 @@ import numpy as np
 from f1tenth_planning.utils.utils import nearest_point
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
-
+from f110_gym.envs.action import CarAction
 
 @dataclass
 class mpc_config:
@@ -96,23 +96,31 @@ class KMPCPlanner:
     def __init__(
         self,
         track,
+        action_type : CarAction,
         config=mpc_config(),
         params=np.array(
             [3.74, 0.15875, 0.17145, 0.074, 4.718, 5.4562, 0.04712, 1.0489]
         ),
         debug=False,
+        ref='centerline',
     ):
-        self.waypoints = [track.centerline.xs, track.centerline.ys, track.centerline.yaws, 6.0 * np.ones_like(track.centerline.vxs)]
         self.config = config
+        if ref == 'centerline':
+            self.waypoints = [track.centerline.xs, track.centerline.ys, track.centerline.yaws, 6.0 * np.ones_like(track.centerline.vxs)]
+            self.config.dlk = track.centerline.ss[1] - track.centerline.ss[0] # waypoint spacing
+        elif ref == 'raceline':
+            self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
+            self.config.dlk = track.raceline.ss[1] - track.raceline.ss[0] # waypoint spacing
+
         self.vehicle_params = params
-        self.odelta_v = None
-        self.oa = None
         self.odelta = None
+        self.oa = None
         self.ref_path = None
         self.ox = None
         self.oy = None
         self.init_flag = 0
         self.debug = debug
+        self.action_type = action_type
         self.mpc_prob_init_kinematic()
 
         self.drawn_waypoints = []
@@ -521,19 +529,27 @@ class KMPCPlanner:
         # Solve the Linear MPC Control problem
         (
             self.oa,
-            self.odelta_v,
+            self.odelta,
             self.ox,
             self.oy,
             oyaw,
             ov,
             state_predict,
-        ) = self.linear_mpc_control_kinematic(self.ref_path, x0, self.oa, self.odelta_v)
+        ) = self.linear_mpc_control_kinematic(self.ref_path, x0, self.oa, self.odelta)
 
-        if self.odelta_v is not None:
-            di, ai = self.odelta_v[0], self.oa[0]
-
-        accl_output = self.oa[0]
-        sv_output = (self.odelta_v[0] - vehicle_state.delta) / self.config.DTK
+        if self.action_type._longitudinal_action == 'accl':
+            accl_output = self.oa[0]
+        elif self.action_type._longitudinal_action == 'speed':
+            accl_output = vehicle_state.v + self.oa[0] * self.config.DTK # Integrate acceleration to get speed using forward Euler
+        else:
+            raise ValueError(f"Unknown longitudinal action type {self.action_type._longitudinal_action}")
+        
+        if self.action_type._steer_action == 'steering_angle':
+            sv_output = self.odelta[0]
+        elif self.action_type._steer_action == 'steering_speed':
+            sv_output = (self.odelta[0] - vehicle_state.delta) / self.config.DTK # Derivative of steering angle using finite difference
+        else:
+            raise ValueError(f"Unknown steering action type {self.action_type._steer_action}")
 
         if self.debug:
             plt.cla()
