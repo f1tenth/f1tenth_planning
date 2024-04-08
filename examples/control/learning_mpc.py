@@ -61,15 +61,14 @@ def main():
                             config={
                                 "map": "Rounded_Rectangle",
                                 "num_agents": 1,
-                                "control_input": "accl",
+                                "control_input": ["accl", "steering_angle"],
                                 "observation_config": {"type": "features", 
                                                        "features": features},
                             },
                             render_mode='human')
 
     # create planner
-    planner = KMPCPlanner(track=env.unwrapped.track, debug=False)
-    planner.config.dlk = env.unwrapped.track.centerline.ss[1] - env.unwrapped.track.centerline.ss[0] # waypoint spacing
+    planner = KMPCPlanner(track=env.unwrapped.track, action_type=env.action_type, debug=False, ref='centerline')
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
@@ -129,7 +128,7 @@ def main():
                                 obs["agent_0"]["ang_vel_z"],
                                 obs["agent_0"]["beta"]]
                               ])        
-        frenet_kinematic_pose = env.unwrapped.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
+        frenet_kinematic_pose = env.track.cartesian_to_frenet(curr_state[0, 0], curr_state[0, 1], curr_state[0, 4], s_guess=old_s)
         curr_state_frenet = np.array([
                                 [frenet_kinematic_pose[0],
                                 frenet_kinematic_pose[1],
@@ -156,7 +155,7 @@ def main():
         curr_controls = np.vstack((curr_controls, np.array([[steerv, accl]])))
         curr_trajectory = np.vstack((curr_trajectory, curr_state_frenet))
 
-        print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
+        print("speed: {}, steer angle: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
 
         if lap_count != completed_laps:
             lap_count = completed_laps
@@ -200,6 +199,7 @@ def main():
         traj_y = np.array(traj_y)
         traj_s = np.array(traj_s)
         traj_yaw = np.array(traj_yaw)
+        traj_eyaw = np.array(traj_eyaw)
         plt.scatter(traj_x, traj_y, c=traj_values)
                     #lmpc.vSS_trajectories[i])
     plt.colorbar() # Colorbar before other scatter to ensure correct range
@@ -250,7 +250,7 @@ def main():
         curr_controls = np.vstack((curr_controls, np.array([[steerv, accl]])))
         curr_trajectory = np.vstack((curr_trajectory, curr_state_frenet))
 
-        print("speed: {}, steer vel: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
+        print("speed: {}, steer angle: {}, accl: {}".format(obs["agent_0"]['linear_vel_x'], steerv, accl))
 
         if lap_count != completed_laps:
             lap_count = completed_laps
