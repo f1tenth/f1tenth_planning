@@ -27,15 +27,11 @@ Author: Ahmad Amine
 Last Modified: 01/01/2024
 """
 
-import math
 from dataclasses import dataclass, field
-import matplotlib.pyplot as plt
 import cvxpy
 import numpy as np
-from f1tenth_planning.utils.utils import nearest_point
 from scipy.linalg import block_diag
-from scipy.sparse import block_diag, csc_matrix, diags
-from cvxpy.atoms.affine.wraps import psd_wrap
+from scipy.sparse import block_diag, csc_matrix
 
 @dataclass
 class lmpc_config:
@@ -53,7 +49,9 @@ class lmpc_config:
     dl: float = 0.03  # dist step [m]
     LENGTH: float = 0.58  # Length of the vehicle [m]
     WIDTH: float = 0.31  # Width of the vehicle [m]
-    WB: float = 0.33  # Wheelbase [m]
+    WB: float = 0.3302  # Wheelbase [m]
+    LF: float = 0.15875 # Distance from the center of mass to the front axle [m]
+    LR: float = 0.17145 # Distance from the center of mass to the rear axle [m]
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MIN_STEER: float = -0.4189  # minimum steering angle [rad]
     MAX_SPEED: float = 6.0  # maximum speed [m/s]
@@ -297,9 +295,9 @@ class LMPCPlanner:
         """
         Uses the kinematic bicycle model in frenet frame to update the state of the vehicle
         Dynamics reference: https://arxiv.org/pdf/2005.07691.pdf
-        :param state: current state of the vehicle [s, ey, epsi, v]
+        :param state: current state of the vehicle [s, ey, epsi, v, delta]
         :param a: acceleration
-        :param delta: steering angle
+        :param delta: steering speed
         """
         # input check
         if delta >= self.config.MAX_STEER:
@@ -308,7 +306,6 @@ class LMPCPlanner:
             delta = self.config.MIN_STEER
 
         curvature = self.centerline.spline.calc_curvature(state.s)
-
         state.s = state.s + ((state.v * np.cos(state.epsi)) / (1 - state.ey * curvature)) * self.config.DT
         state.ey = state.ey + (state.v * np.sin(state.epsi)) * self.config.DT
         state.epsi = state.epsi + (state.v * np.tan(delta) / self.config.WB - curvature * ((state.v * np.cos(state.epsi))/(1 - curvature * state.ey))) * self.config.DT
@@ -426,18 +423,18 @@ class LMPCPlanner:
         constraints += [self.x[:, 0] == self.x0]  # [s, ey, epsi, v]
 
         # Constraint 3: Terminal state constraint ||(lambda_f.T * xSS) - x[N]|| <= epsilon
-        constraints += [cvxpy.abs(self.lambda_f.T @ self.safe_set_values - self.x[:, -1]) <= 0.1]
+        constraints += [cvxpy.abs(self.lambda_f.T @ self.safe_set_values - self.x[:, -1]) <= 1]
 
         # Constraints 4: Convexity of the lambda decision variable
         constraints += [cvxpy.sum(self.lambda_f) == 1]
 
         # Constraints 5: State and Input Constraints
-        constraints += [
-            self.x[1, :] <= self.config.TRACK_WIDTH/2
-        ]  # State 1: Signed Lateral Error must be lower than half of the track width
-        constraints += [
-            self.x[1, :] >= -self.config.TRACK_WIDTH/2
-        ]  # State 1: Signed Lateral Error must be higher than negative half of the track width
+        # constraints += [
+        #     self.x[1, :] <= self.config.TRACK_WIDTH/2
+        # ]  # State 1: Signed Lateral Error must be lower than half of the track width
+        # constraints += [
+        #     self.x[1, :] >= -self.config.TRACK_WIDTH/2
+        # ]  # State 1: Signed Lateral Error must be higher than negative half of the track width
         constraints += [
             self.x[3, :] <= self.config.MAX_SPEED
         ]  # State 3: Velocity must be lower than Max Velocity
@@ -614,7 +611,7 @@ class LMPCPlanner:
 
         # Output the steering and acceleration commands
         steering_output = di
-        accl_output = self.oa[0]
+        accl_output = ai
 
         return (
             accl_output,

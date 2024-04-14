@@ -106,11 +106,11 @@ class KMPCPlanner:
     ):
         self.config = config
         if ref == 'centerline':
-            self.waypoints = [track.centerline.xs, track.centerline.ys, track.centerline.yaws, 6.0 * np.ones_like(track.centerline.vxs)]
-            self.config.dlk = track.centerline.ss[1] - track.centerline.ss[0] # waypoint spacing
+            self.waypoints = [track.centerline.xs.copy(), track.centerline.ys.copy(), track.centerline.yaws.copy(), 6.0 * np.ones_like(track.centerline.vxs.copy())]
+            self.config.dlk = track.centerline.ss.copy()[1] - track.centerline.ss.copy()[0] # waypoint spacing
         elif ref == 'raceline':
-            self.waypoints = [track.raceline.xs, track.raceline.ys, track.raceline.yaws, track.raceline.vxs]
-            self.config.dlk = track.raceline.ss[1] - track.raceline.ss[0] # waypoint spacing
+            self.waypoints = [track.raceline.xs.copy(), track.raceline.ys.copy(), track.raceline.yaws.copy(), track.raceline.vxs.copy()]
+            self.config.dlk = track.raceline.ss.copy()[1] - track.raceline.ss.copy()[0] # waypoint spacing
 
         self.vehicle_params = params
         self.odelta = None

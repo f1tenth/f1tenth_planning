@@ -44,7 +44,7 @@ def main():
     # create environment
     env : F110Env = gym.make('f110_gym:f110-v0',
                             config={
-                                "map": "Spielberg",
+                                "map": "Rounded_Rectangle",
                                 "num_agents": 1,
                                 "control_input": "accl",
                                 "observation_config": {"type": "dynamic_state"},
@@ -52,8 +52,7 @@ def main():
                             render_mode='human')
 
     # create planner
-    planner = KMPCPlanner(track=env.track, debug=False)
-    planner.config.dlk = env.track.raceline.ss[1] - env.track.raceline.ss[0] # waypoint spacing
+    planner = KMPCPlanner(track=env.unwrapped.track, debug=False, action_type=env.unwrapped.action_type, ref='centerline')
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_mpc_sol)
@@ -62,9 +61,9 @@ def main():
     poses = np.array(
         [
             [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
             ]
         ]
     )
