@@ -21,7 +21,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<=3.11"
+python = "^3.9 <3.12"
 cvxpy = "*"
 osqp = "*"
 kiwisolver = "*"
@@ -31,7 +31,7 @@ numba = "*"
 numpy = "*"
 qdldl = "*"
 pyyaml = "*"
-f1tenth_gym = { git = "https://github.com/f1tenth/f1tenth_gym.git", branch = "dev_packaging_update"}    # todo: change to v1.0.0
+f1tenth_gym = {git = "git@github.com:f1tenth/f1tenth_gym", branch = "v1.0.0"}
 
 
 [build-system]
