@@ -9,7 +9,7 @@ import pathlib
 import numpy as np
 import math
 
-class StanleyPlanner(Controller):
+class StanleyController(Controller):
     """
     This is the class for the Front Weeel Feedback Controller (Stanley) for tracking the path of the vehicle
     References:
@@ -45,7 +45,8 @@ class StanleyPlanner(Controller):
         ------
         ValueError
             if track is None or does not have waypoints (raceline or centerline)
-
+        ValueError
+            if config file does not exist
         """
         if track is None or (track.raceline is None and track.centerline is None):
             raise ValueError("Track object with waypoints is required for the controller")
@@ -56,7 +57,12 @@ class StanleyPlanner(Controller):
                             [reference.xs, reference.ys, reference.vxs, reference.yaws], axis=1
                         )
 
-        if isinstance(config, str):
+        config = {}
+        if config is not None:
+            if isinstance(config, str):
+                config = pathlib.Path(config)
+                if not config.exists():
+                    raise ValueError(f"Config file {config} does not exist")
             config = self.load_config(config)
         self.wheelbase = config.get("wheelbase", 0.33)
         self.drawn_waypoints = []
