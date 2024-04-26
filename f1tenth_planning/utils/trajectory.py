@@ -3,7 +3,7 @@ from f1tenth_gym.envs.track.raceline import Raceline
 from typing import Sequence
 import numpy as np
 import pathlib
-
+import matplotlib.pyplot as plt
 
 class Trajectory(Raceline):
     type: str
@@ -138,4 +138,9 @@ class Trajectory(Raceline):
         )
 
     def render(self):
-        pass
+        """Render trajectory. Quiver plot of (x, y, psi) colored by velocity.
+        """
+        fig, ax = plt.subplots()
+        q = ax.quiver(self.xs, self.ys, np.cos(self.psis), np.sin(self.psis), self.velxs)
+        plt.show()
+        return
