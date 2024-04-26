@@ -36,14 +36,72 @@ class Trajectory(Raceline):
     ):
         if type(path) == str:
             path = pathlib.Path(path)
-        assert path.exists(), f"Input file {path} does not exist."
-        waypoints = np.loadtxt(path, delimiter=delimiter)
+        raceline = Raceline.from_raceline_path(path, delimiter)
+        if fixed_speed is not None:
+            raceline.velxs = np.full_like(raceline.ss, fixed_speed)
+        return Trajectory(
+            ss=raceline.ss,
+            xs=raceline.xs,
+            ys=raceline.ys,
+            psis=raceline.psis,
+            kappas=raceline.kappas,
+            velxs=raceline.velxs,
+            accxs=raceline.accxs,
+        )
 
     def check_valid(self):
         pass
 
-    def to_file(self):
-        pass
+    def to_file(
+        self,
+        path: str | pathlib.Path,
+        delimiter: str | None = ",",
+        fixed_speed: float | None = 1.0,
+    ):
+        """Save trajectory to file, with optional fixed speed.
+
+        Parameters
+        ----------
+        path : str | pathlib.Path
+            path to save trajectory to
+        delimiter : str, optional
+            delimiter to use, by default ","
+
+        Raises
+        ------
+        ValueError
+            If file extension is not supported
+        FileExistsError
+            If file already exists
+        FileNotFoundError
+            If directory does not exist
+        """
+        if type(path) == str:
+            path = pathlib.Path(path)
+        # Check if path ends with a valid extension (csv, txt, npy, etc.)
+        if path.suffix not in [".csv", ".txt", ".npy"]:
+            raise ValueError(f"File extension {path.suffix} not supported.")
+        # Check if file exists 
+        if path.exists():
+            raise FileExistsError(f"File {path} already exists.")
+        # Check if directory exists
+        if not path.parent.exists():
+            raise FileNotFoundError(f"Directory {path.parent} does not exist.")
+        
+        if fixed_speed is not None:
+            vels = np.full_like(self.ss, fixed_speed)
+        else:
+            vels = self.velxs
+
+        header = f'{delimiter} '.join(['s_m','x_m','y_m','psi_rad','kappa_radpm','vx_mps','ax_mps2'])
+        np.savetxt(
+            path,
+            np.array([self.ss, self.xs, self.ys, self.psis, self.kappas, vels]).T,
+            header=header,
+            comments="# ",
+            delimiter=delimiter,
+        )
+        return
 
     def subsample(self):
         pass
