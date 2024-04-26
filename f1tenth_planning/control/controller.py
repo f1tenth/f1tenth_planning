@@ -89,8 +89,8 @@ class Controller(ABC):
 
         Parameters
         ----------
-        e : _type_
-            _description_
+        e : EnvRenderer
+            environment renderer
         """
         if self.waypoints is not None:
             points = self.waypoints[:, :2]

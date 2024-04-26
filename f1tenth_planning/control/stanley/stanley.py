@@ -1,5 +1,6 @@
 from f1tenth_planning.control.controller import Controller
 from f1tenth_gym.envs.track import Track
+from f1tenth_gym.envs.rendering.renderer import EnvRenderer
 
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
@@ -26,9 +27,12 @@ class StanleyController(Controller):
                  "wheelbase": float, wheelbase of the vehicle
                  "k_path": float, proportional gain for cross-track error
 
-    Attributes:
+    Attributes
+    ----------
         wheelbase (float, optional, default=0.33): wheelbase of the vehicle
         waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
+        k_path (float, optional, default=7.0): proportional gain for cross-track error
+        k_vel (float, optional, default=0.7): proportional gain for velocity error
     """
 
     def __init__(self, track: Track, config: dict | str | pathlib.Path = None) -> None:
@@ -107,6 +111,11 @@ class StanleyController(Controller):
     def render_target_point(self, e):
         """
         Callback to render the target point.
+
+        Parameters
+        ----------
+        e : EnvRenderer
+            environment renderer
         """
         if self.target_point is not None:
             points = self.target_point[:2][None]  # shape (1, 2)
@@ -115,6 +124,11 @@ class StanleyController(Controller):
     def render_local_plan(self, e):
         """
         update waypoints being drawn by EnvRenderer
+
+        Parameters
+        ----------
+        e : EnvRenderer
+            environment renderer
         """
         if self.target_index is not None:
             points = self.waypoints[self.target_index : self.target_index + 10, :2]
