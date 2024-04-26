@@ -92,6 +92,31 @@ class PurePursuitController(Controller):
         self.wheelbase = config.get("wheelbase", self.wheelbase)
         self.lookahead_distance = config.get("lookahead_distance", self.lookahead_distance)
         self.max_reacquire = config.get("max_reacquire", self.max_reacquire)
+
+    def load_config(self, path: str | pathlib.Path) -> dict:
+        """Load configuration from yaml file
+
+        Parameters
+        ----------
+        path : str | pathlib.Path
+            path to yaml file
+
+        Returns
+        -------
+        dict
+            configuration dictionary
+
+        Raises
+        ------
+        ValueError
+            if path does not exist
+        """
+        if type(path) == str:
+            path = pathlib.Path(path)
+        if not path.exists():
+            raise ValueError(f"Config file {path} does not exist")
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
         
     def render_lookahead_point(self, e):
         """
