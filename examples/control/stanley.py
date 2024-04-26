@@ -29,8 +29,7 @@ Last Modified: 5/4/22
 
 import numpy as np
 import gymnasium as gym
-import f110_gym
-from f1tenth_planning.control.stanley.stanley import StanleyPlanner
+from f1tenth_planning.control.stanley.stanley import StanleyController
 
 
 def main():
@@ -41,7 +40,7 @@ def main():
 
     # create environment
     env = gym.make(
-        "f110_gym:f110-v0",
+        "f1tenth_gym:f1tenth-v0",
         config={
             "map": "Spielberg",
             "num_agents": 1,
@@ -50,14 +49,9 @@ def main():
         },
         render_mode="human",
     )
+    planner = StanleyController(env.unwrapped.track)
 
-    # reset environment
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack(
-        [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
-    )
-    planner = StanleyPlanner(waypoints=waypoints)
-
+    # add render callbacks
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)
     env.add_render_callback(planner.render_target_point)
@@ -79,14 +73,7 @@ def main():
     # run simulation
     laptime = 0.0
     while not done:
-        steer, speed = planner.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            obs["agent_0"]["linear_vel_x"],
-            k_path=7.0,
-        )
-        speed = 0.7 * speed
+        steer, speed = planner.plan(obs['agent_0'])
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
