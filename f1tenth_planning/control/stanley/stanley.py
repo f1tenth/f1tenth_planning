@@ -21,8 +21,10 @@ class StanleyController(Controller):
         track : Track
             track object with raceline/centerline
         config : dict | str, optional
-            dictionary or path to yaml with controller specific parameters, by default None
-            expects key "wheelbase": float, wheelbase of the vehicle
+            dictionary or path to yaml with controller specific parameters, by default None 
+            expects the following keys : 
+                 "wheelbase": float, wheelbase of the vehicle
+                 "k_path": float, proportional gain for cross-track error
 
     Attributes:
         wheelbase (float, optional, default=0.33): wheelbase of the vehicle
@@ -65,6 +67,7 @@ class StanleyController(Controller):
                     raise ValueError(f"Config file {config} does not exist")
             config = self.load_config(config)
         self.wheelbase = config.get("wheelbase", 0.33)
+        self.k_path = config.get("k_path", 7.0)
         self.drawn_waypoints = []
         self.target_point = None
         self.target_index = None
@@ -120,7 +123,9 @@ class StanleyController(Controller):
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
         Calculate the heading and cross-track errors
-        Args:
+        
+        Parameters
+        ----------
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
             waypoints (numpy.ndarray [N, 4]): waypoints to track [x, y, velocity, heading]
         """
@@ -159,12 +164,14 @@ class StanleyController(Controller):
         Based on the heading error theta_e and the crosstrack error ef we calculate the steering angle
         Returns the optimal steering angle delta is P-Controller with the proportional gain k
 
-        Args:
+        Parameters
+        ----------
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
             waypoints (numpy.ndarray [N, 4]): waypoints to track
             k_path (float): proportional gain
 
-        Returns:
+        Returns
+        -------
             theta_e (float): heading error
             ef (numpy.ndarray [2, ]): crosstrack error
             theta_raceline (float): target heading
@@ -182,32 +189,33 @@ class StanleyController(Controller):
 
         return delta, goal_veloctiy
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity, k_path=5.0, waypoints=None):
+    def plan(self, state: dict) -> np.ndarray:
         """
-        Plan function
+        Calculate the desired steering angle and speed based on the current vehicle state
 
-        Args:
-            pose_x (float):
-            pose_y (float):
-            pose_theta (float):
-            velocity (float):
-            k_path (float, optional, default=5):
-            waypoints (numpy.ndarray [N x 4], optional, default=None):
+        Parameters
+        ----------
+        state : dict
+            observation as returned from the environment.
+        Returns
+        -------
+        np.ndarray
+            control action as (steering_angle, speed) or (steering_vel, acceleration)
 
-        Returns:
-            steering_angle (float): desired steering angle
-            speed (float): desired speed
+        Raises
+        ------
+        ValueError
+            if waypoints are not set
         """
-        if waypoints is not None:
-            if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
-                raise ValueError("Waypoints needs to be a (Nxm), m >= 4, numpy array!")
-            self.waypoints = waypoints
-        else:
-            if self.waypoints is None:
-                raise ValueError(
-                    "Please set waypoints to track during planner instantiation or when calling plan()"
-                )
-        k_path = np.float32(k_path)
+        if self.waypoints is None:
+            raise ValueError(
+                "Please set waypoints to track during planner instantiation"
+            )
+
+        pose_x = state["pose_x"]
+        pose_y = state["pose_y"]
+        pose_theta = state["pose_theta"]
+        velocity = state["linear_vel_x"]
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
-        steering_angle, speed = self.controller(vehicle_state, self.waypoints, k_path)
+        steering_angle, speed = self.controller(vehicle_state, self.waypoints, self.k_path)
         return steering_angle, speed
