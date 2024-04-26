@@ -21,9 +21,7 @@ def main():
         render_mode="human",
     )
 
-    # create planner
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
+    # create controller
     controller = PurePursuitController(env.unwrapped.track)
 
     env.add_render_callback(controller.render_waypoints)

@@ -1,76 +1,148 @@
-# MIT License
-
-# Copyright (c) Hongrui Zheng, Johannes Betz, Atsushi Sakai
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-"""
-LQR waypoint tracker
-Implementation inspired by https://github.com/AtsushiSakai/PythonRobotics/blob/master/PathTracking/lqr_steer_control/lqr_steer_control.py
-
-Author: Hongrui Zheng, Johannes Betz, Atsushi Sakai
-Last Modified: 5/5/22
-"""
-
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
 from f1tenth_planning.utils.utils import solve_lqr
 from f1tenth_planning.utils.utils import pi_2_pi
 
+from f1tenth_planning.control.controller import Controller
+from f1tenth_gym.envs.track import Track
+
+import yaml
+import pathlib
 import numpy as np
 import math
 
-
-class LQRPlanner:
+class LQRController(Controller):
     """
     Lateral Controller using LQR
 
-    Args:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 5], optional, default=None): waypoints to track, columns are [x, y, velocity, heading, curvature]
+    Parameters
+    ----------
+        track : Track
+            track object with raceline/centerline
+        config : dict | str, optional
+            dictionary or path to yaml with controller specific parameters, by default None 
+            expects the following keys : 
+                 "wheelbase": float, wheelbase of the vehicle
+                 "matrrix_q": list, weights on the states
+                 "matrix_r": list, weights on control input
+                 "iterations": int, maximum iteration for solving
+                 "eps": float, error tolerance for solving
+                 "timestep": float, discretization time step
 
-    Attributes:
+    Attributes
+    ----------
         wheelbase (float, optional, default=0.33): wheelbase of the vehicle
         waypoints (numpy.ndarray [N, 5], optional, default=None): waypoints to track, columns are [x, y, velocity, heading, curvature]
         vehicle_control_e_cog (float): lateral error of cog to ref trajectory
         vehicle_control_theta_e (float): yaw error to ref trajectory
     """
 
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.wheelbase = 0.33
-        self.waypoints = waypoints
+    
+    def __init__(self, track: Track, config: dict | str | pathlib.Path = None) -> None:
+        """Controller init
+
+        Parameters
+        ----------
+        track : Track
+            track object with raceline/centerline
+        config : dict | str, optional
+            dictionary or path to yaml with controller specific parameters, by default None
+            expects the following key:
+            - wheelbase: float, wheelbase of the vehicle
+            - matrix_q: list, weights on the states
+            - matrix_r: list, weights on control input
+            - iterations: int, maximum iteration for solving
+            - eps: float, error tolerance for solving
+            - timestep: float, discretization time step
+
+        Raises
+        ------
+        ValueError
+            if track is None or does not have waypoints (raceline or centerline)
+        ValueError
+            if config file does not exist
+        """
+        if track is None or (track.raceline is None and track.centerline is None):
+            raise ValueError("Track object with waypoints is required for the controller")
+        
+        # Extract waypoints from track
+        reference = track.raceline if track.raceline is not None else track.centerline
+        self.waypoints = np.stack(
+                            [reference.xs, reference.ys, reference.vxs, reference.yaws, reference.ks], axis=1
+                        )
+        
+        if config is not None:
+            if isinstance(config, (str, pathlib.Path)):
+                if isinstance(config, str):
+                    config = pathlib.Path(config)
+                if not config.exists():
+                    raise ValueError(f"Config file {config} does not exist")
+                config = self.load_config(config)
+        else:
+            config = {}
+
+        # Setting controller parameters
+        self.timestep = config.get("timestep", 0.01)
+        self.wheelbase = config.get("wheelbase", 0.33)
+        self.matrix_q = config.get("matrix_q", [0.999, 0.0, 0.0066, 0.0])
+        self.matrix_r = config.get("matrix_r", [0.75])
+        self.iterations = config.get("iterations", 50)
+        self.eps = config.get("eps", 0.001)
+
+        # Initialize control errors
         self.vehicle_control_e_cog = 0  # e_cg: lateral error of CoG to ref trajectory
         self.vehicle_control_theta_e = 0  # theta_e: yaw error to ref trajectory
-        self.drawn_waypoints = []
         self.closest_point = None
         self.target_index = None
 
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+    def update(self, config: dict) -> None:
+        """Updates setting of controller
 
+        Parameters
+        ----------
+        config : dict
+            configurations to update
+        """
+        self.wheelbase = config.get("wheelbase", self.wheelbase)
+        self.matrix_q = config.get("matrix_q", self.matrix_q)
+        self.matrix_r = config.get("matrix_r", self.matrix_r)
+        self.iterations = config.get("iterations", self.iterations)
+        self.eps = config.get("eps", self.eps)
+        self.timestep = config.get("timestep", self.timestep)
+
+    def load_config(self, path: str | pathlib.Path) -> dict:
+        """Load configuration from yaml file
+
+        Parameters
+        ----------
+        path : str | pathlib.Path
+            path to yaml file
+
+        Returns
+        -------
+        dict
+            configuration dictionary
+
+        Raises
+        ------
+        ValueError
+            if path does not exist
+        """
+        if type(path) == str:
+            path = pathlib.Path(path)
+        if not path.exists():
+            raise ValueError(f"Config file {path} does not exist")
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+        
     def render_closest_point(self, e):
         """
         Callback to render the closest point.
+
+        Parameters
+        ----------
+        e : EnvRenderer
+            environment renderer
         """
         if self.closest_point is not None:
             points = self.closest_point[:2][None]  # shape (1, 2)
@@ -79,6 +151,11 @@ class LQRPlanner:
     def render_local_plan(self, e):
         """
         update waypoints being drawn by EnvRenderer
+
+        Parameters
+        ----------
+        e : EnvRenderer
+            environment renderer
         """
         if self.target_index is not None:
             points = self.waypoints[self.target_index : self.target_index + 10, :2]
@@ -87,11 +164,14 @@ class LQRPlanner:
     def calc_control_points(self, vehicle_state, waypoints):
         """
         Calculate the heading and cross-track errors and target velocity and curvature
-        Args:
+
+        Parameters
+        ----------
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
             waypoints (numpy.ndarray [N, 5]): waypoints to track [x, y, velocity, heading, curvature]
 
-        Returns:
+        Returns
+        -------
             theta_e (float): heading error
             e_cog (float): lateral crosstrack error
             theta_raceline (float): target heading
@@ -140,7 +220,8 @@ class LQRPlanner:
         """
         Compute lateral control command.
 
-        Args:
+        Parameters
+        ----------
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
             waypoints (numpy.ndarray [N, 5]): waypoints to track
             ts (float): discretization time step
@@ -149,7 +230,8 @@ class LQRPlanner:
             max_iteration (int): maximum iteration for solving
             eps (float): error tolerance for solving
 
-        Returns:
+        Returns
+        -------
             steer_angle (float): desired steering angle
             v_ref (float): desired velocity
         """
@@ -194,64 +276,40 @@ class LQRPlanner:
 
         return steer_angle, v_ref
 
-    def plan(
-        self,
-        pose_x,
-        pose_y,
-        pose_theta,
-        velocity,
-        timestep=0.01,
-        matrix_q_1=0.999,
-        matrix_q_2=0.0,
-        matrix_q_3=0.0066,
-        matrix_q_4=0.0,
-        matrix_r=0.75,
-        iterations=50,
-        eps=0.001,
-        waypoints=None,
-    ):
+    def plan(self, state: dict) -> np.ndarray:
         """
-        Compute lateral control command.
+        Calculate the desired steering angle and speed based on the current vehicle state
 
-        Args:
-            pose_x (float):
-            pose_y (float):
-            pose_theta (float):
-            velocity (float):
-            timestep (float, optional, default=0.01):
-            matrix_q_1 (float, optional, default=1.0):
-            matrix_q_2 (float, optional, default=0.95):
-            matrix_q_3 (float, optional, default=0.0066):
-            matrix_q_4 (float, optional, default=0.0257):
-            matrix_r (float, optional, default=0.0062):
-            iterations (int, optional, default=50):
-            eps (float, optional, default=0.01):
-            waypoints (numpy.ndarray [N x 5], optional, default=None):
+        Parameters
+        ----------
+        state : dict
+            observation as returned from the environment.
 
-        Returns:
-            steering_angle (float): desired steering angle
-            speed (float): desired speed
+        Returns
+        -------
+            speed (float): commanded vehicle longitudinal velocity
+            steering_angle (float):  commanded vehicle steering angle
+
+        Raises
+        ------
+        ValueError
+            if waypoints are not set
         """
-        if waypoints is not None:
-            if waypoints.shape[1] < 5 or len(waypoints.shape) != 2:
-                raise ValueError("Waypoints needs to be a (Nxm), m >= 5, numpy array!")
-            self.waypoints = waypoints
-        else:
-            if self.waypoints is None:
-                raise ValueError(
-                    "Please set waypoints to track during planner instantiation or when calling plan()"
-                )
-
-        # Define LQR Matrix and Parameter
-        matrix_q = [matrix_q_1, matrix_q_2, matrix_q_3, matrix_q_4]
-        matrix_r = [matrix_r]
+        if self.waypoints is None:
+            raise ValueError(
+                "Please set waypoints to track during planner instantiation or when calling plan()"
+            )
+        pose_x = state["pose_x"]
+        pose_y = state["pose_y"]
+        pose_theta = state["pose_theta"]
+        velocity = state["linear_vel_x"]
 
         # Define a numpy array that includes the current vehicle state: x,y, theta, veloctiy
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
 
         # Calculate the steering angle and the speed in the controller
         steering_angle, speed = self.controller(
-            vehicle_state, self.waypoints, timestep, matrix_q, matrix_r, iterations, eps
+            vehicle_state, self.waypoints, self.timestep, self.matrix_q, self.matrix_r, self.iterations, self.eps
         )
 
         return steering_angle, speed
