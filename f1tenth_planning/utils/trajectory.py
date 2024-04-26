@@ -103,8 +103,39 @@ class Trajectory(Raceline):
         )
         return
 
-    def subsample(self):
-        pass
+    def subsample(self, 
+                  jump: int = 1):
+        """Subsample trajectory to reduce number of points.
+
+        Parameters
+        ----------
+        jump : int, optional
+            Number of points to downsample by, by default 1
+
+        Returns
+        -------
+        Trajectory
+            Subsampled trajectory
+
+        Raises
+        ------
+        ValueError
+            If jump is not a positive integer or if jump is greater than trajectory length
+        """
+        if jump <= 0:
+            raise ValueError("Jump must be a positive integer.")
+        if jump > len(self.ss):
+            raise ValueError("Jump must be less than trajectory length.")
+        
+        return Trajectory(
+            ss=self.ss[::jump],
+            xs=self.xs[::jump],
+            ys=self.ys[::jump],
+            psis=self.psis[::jump],
+            kappas=self.kappas[::jump],
+            velxs=self.velxs[::jump],
+            accxs=self.accxs[::jump],
+        )
 
     def render(self):
         pass
