@@ -4,6 +4,7 @@ from f1tenth_gym.envs.track import Track
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
 
+import yaml
 import pathlib
 import numpy as np
 import math
@@ -62,6 +63,31 @@ class StanleyPlanner(Controller):
         self.target_point = None
         self.target_index = None
 
+    def load_config(self, path: str | pathlib.Path) -> dict:
+        """Load configuration from yaml file
+
+        Parameters
+        ----------
+        path : str | pathlib.Path
+            path to yaml file
+
+        Returns
+        -------
+        dict
+            configuration dictionary
+
+        Raises
+        ------
+        ValueError
+            if path does not exist
+        """
+        if type(path) == str:
+            path = pathlib.Path(path)
+        if not path.exists():
+            raise ValueError(f"Config file {path} does not exist")
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+        
     def render_waypoints(self, e):
         """
         Callback to render waypoints.
