@@ -42,6 +42,8 @@ class StanleyController(Controller):
             dictionary or path to yaml with controller specific parameters, by default None
             expects the following key:
             - wheelbase: float, wheelbase of the vehicle
+            - k_path: float, proportional gain for cross-track error
+            - k_vel: float, proportional gain for velocity error
 
         Raises
         ------
@@ -66,8 +68,11 @@ class StanleyController(Controller):
                 if not config.exists():
                     raise ValueError(f"Config file {config} does not exist")
             config = self.load_config(config)
+
         self.wheelbase = config.get("wheelbase", 0.33)
         self.k_path = config.get("k_path", 7.0)
+        self.k_vel = config.get("k_vel", 0.7)
+
         self.drawn_waypoints = []
         self.target_point = None
         self.target_index = None
@@ -97,13 +102,6 @@ class StanleyController(Controller):
         with open(path, "r") as f:
             return yaml.safe_load(f)
         
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
-
     def render_target_point(self, e):
         """
         Callback to render the target point.
@@ -123,7 +121,7 @@ class StanleyController(Controller):
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
         Calculate the heading and cross-track errors
-        
+
         Parameters
         ----------
             vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
@@ -187,7 +185,19 @@ class StanleyController(Controller):
         cte_front = math.atan2(k_path * ef, vehicle_state[3])
         delta = cte_front + theta_e
 
-        return delta, goal_veloctiy
+        return delta, self.k_vel * goal_veloctiy
+
+    def update(self, config: dict) -> None:
+        """Updates setting of controller
+
+        Parameters
+        ----------
+        config : dict
+            configurations to update
+        """
+        self.wheelbase = config.get("wheelbase", self.wheelbase)
+        self.k_path = config.get("k_path", self.k_path)
+        self.k_vel = config.get("k_vel", self.k_vel)
 
     def plan(self, state: dict) -> np.ndarray:
         """
