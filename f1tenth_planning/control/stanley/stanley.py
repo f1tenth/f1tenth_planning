@@ -223,11 +223,12 @@ class StanleyController(Controller):
         ----------
         state : dict
             observation as returned from the environment.
+
         Returns
         -------
-        np.ndarray
-            control action as (steering_angle, speed) or (steering_vel, acceleration)
-
+            speed (float): commanded vehicle longitudinal velocity
+            steering_angle (float):  commanded vehicle steering angle
+            
         Raises
         ------
         ValueError

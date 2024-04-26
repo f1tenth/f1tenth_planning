@@ -20,12 +20,12 @@ def main():
         },
         render_mode="human",
     )
-    planner = StanleyController(env.unwrapped.track)
+    controller = StanleyController(env.unwrapped.track)
 
     # add render callbacks
-    env.add_render_callback(planner.render_waypoints)
-    env.add_render_callback(planner.render_local_plan)
-    env.add_render_callback(planner.render_target_point)
+    env.add_render_callback(controller.render_waypoints)
+    env.add_render_callback(controller.render_local_plan)
+    env.add_render_callback(controller.render_target_point)
 
     # reset environment
     poses = np.array(
@@ -44,7 +44,7 @@ def main():
     # run simulation
     laptime = 0.0
     while not done:
-        steer, speed = planner.plan(obs['agent_0'])
+        steer, speed = controller.plan(obs['agent_0'])
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
