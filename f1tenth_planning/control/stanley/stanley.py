@@ -1,58 +1,63 @@
-# MIT License
-
-# Copyright (c) Hongrui Zheng, Johannes Betz
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-"""
-Stanley waypoint tracker
-
-Author: Hongrui Zheng, Johannes Betz
-Last Modified: 5/1/22
-"""
+from f1tenth_planning.control.controller import Controller
+from f1tenth_gym.envs.track import Track
 
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
 
+import pathlib
 import numpy as np
 import math
 
-
-class StanleyPlanner:
+class StanleyPlanner(Controller):
     """
     This is the class for the Front Weeel Feedback Controller (Stanley) for tracking the path of the vehicle
     References:
     - Stanley: The robot that won the DARPA grand challenge: http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
     - Autonomous Automobile Path Tracking: https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
 
-    Args:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
+    Parameters
+    ----------
+        track : Track
+            track object with raceline/centerline
+        config : dict | str, optional
+            dictionary or path to yaml with controller specific parameters, by default None
+            expects key "wheelbase": float, wheelbase of the vehicle
 
     Attributes:
         wheelbase (float, optional, default=0.33): wheelbase of the vehicle
         waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
     """
 
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.wheelbase = wheelbase
-        self.waypoints = waypoints
+    def __init__(self, track: Track, config: dict | str | pathlib.Path = None) -> None:
+        """Controller init
+
+        Parameters
+        ----------
+        track : Track
+            track object with raceline/centerline
+        config : dict | str, optional
+            dictionary or path to yaml with controller specific parameters, by default None
+            expects the following key:
+            - wheelbase: float, wheelbase of the vehicle
+
+        Raises
+        ------
+        ValueError
+            if track is None or does not have waypoints (raceline or centerline)
+
+        """
+        if track is None or (track.raceline is None and track.centerline is None):
+            raise ValueError("Track object with waypoints is required for the controller")
+        
+        # Extract waypoints from track
+        reference = track.raceline if track.raceline is not None else track.centerline
+        self.waypoints = np.stack(
+                            [reference.xs, reference.ys, reference.vxs, reference.yaws], axis=1
+                        )
+
+        if isinstance(config, str):
+            config = self.load_config(config)
+        self.wheelbase = config.get("wheelbase", 0.33)
         self.drawn_waypoints = []
         self.target_point = None
         self.target_index = None
