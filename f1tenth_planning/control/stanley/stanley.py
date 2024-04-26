@@ -61,13 +61,15 @@ class StanleyController(Controller):
                             [reference.xs, reference.ys, reference.vxs, reference.yaws], axis=1
                         )
 
-        config = {}
         if config is not None:
-            if isinstance(config, str):
-                config = pathlib.Path(config)
+            if isinstance(config, (str, pathlib.Path)):
+                if isinstance(config, str):
+                    config = pathlib.Path(config)
                 if not config.exists():
                     raise ValueError(f"Config file {config} does not exist")
-            config = self.load_config(config)
+                config = self.load_config(config)
+        else:
+            config = {}
 
         self.wheelbase = config.get("wheelbase", 0.33)
         self.k_path = config.get("k_path", 7.0)
