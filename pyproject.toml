@@ -31,7 +31,7 @@ numba = "*"
 numpy = "*"
 qdldl = "*"
 pyyaml = "*"
-f1tenth_gym = {git = "git@https://github.com:f1tenth/f1tenth_gym", branch = "v1.0.0"}
+f1tenth_gym = {git = "https://github.com:f1tenth/f1tenth_gym", branch = "v1.0.0"}
 sphinx = "^7.2.6"
 numpydoc = "^1.6.0"
 pydata-sphinx-theme = "^0.15.2"
