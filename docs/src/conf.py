@@ -1,26 +1,18 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# This file only contains a selection of the most common options. For a full
-# list see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
-
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
+# flake8: noqa
 import os
 import sys
 
-# sys.path.insert(0, os.path.abspath('.'))
-sys.path.append(os.path.abspath("extensions"))
+sys.path.insert(0, os.path.abspath("../../"))
 
 # -- Project information -----------------------------------------------------
 
-project = "F1TENTH Autonomous Racing Software Stack"
-copyright = "2022, Hongrui Zheng, Johannes Betz"
-author = "Hongrui Zheng, Johannes Betz"
+project = "f1tenth_planning"
+copyright = "2024, Hongrui Zheng, Luigi Berducci, Renukanandan Tumu, Ahmad Amine, Johannes Betz"
+author = "Hongrui Zheng, Luigi Berducci, Renukanandan Tumu, Ahmad Amine, Johannes Betz"
+
+# The full version, including alpha/beta/rc tags
+release = "1.0.0"
+version = "1.0.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -29,91 +21,50 @@ author = "Hongrui Zheng, Johannes Betz"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx_tabs.tabs",
-    "sphinx.ext.imgmath",
-    "sphinx.ext.todo",
+    "sphinx.ext.autodoc",
+    "numpydoc",
     "sphinx_copybutton",
-    "myst_parser",
+    "sphinx_design",
+    "sphinx.ext.doctest",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.coverage",
+    "sphinx.ext.viewcode",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
-
-source_suffix = [".rst", ".md"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-from gdscript import GDScriptLexer
-from sphinx.highlighting import lexers
+master_doc = "index"
 
-lexers["gdscript"] = GDScriptLexer()
+# -- coverate test configuration -----------------------------------------------
+coverage_show_missing_items = True
 
-# Pygments (syntax highlighting) style to use
-pygments_style = "sphinx"
-highlight_language = "gdscript"
+# -- numpydoc -----------------------------------------------------------------
+numpydoc_show_class_members = False
 
-# -- Options for HTML output -------------------------------------------------
-
-env_tags = os.getenv("SPHINX_TAGS")
-if env_tags != None:
-    for tag in env_tags.split(","):
-        print("Adding Sphinx tag: %s" % tag.strip())
-        tags.add(tag.strip())
-
-# Language / i18n
-language = os.getenv("READTHEDOCS_LANGUAGE", "en")
-is_i18n = tags.has("i18n")
-
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-#
-on_rtd = os.environ.get("READTHEDOCS", None) == "True"
-import sphinx_rtd_theme
-
-html_theme = "sphinx_rtd_theme"
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-if on_rtd:
-    using_rtd_theme = True
-
-# Theme options
+# -- Theme -------------------------------------------------------------------
+html_theme = "pydata_sphinx_theme"
+html_favicon = "assets/f1_stickers_02.png"
 html_theme_options = {
-    # 'typekit_id': 'hiw1hhg',
-    # 'analytics_id': '',
-    # 'sticky_navigation': True  # Set to False to disable the sticky nav while scrolling.
-    "logo_only": False,  # if we have a html_logo below, this shows /only/ the logo with no title text
-    "collapse_navigation": False,  # Collapse navigation (False makes it tree-like)
-    "prev_next_buttons_location": "bottom",
-    # 'display_version': True,  # Display the docs version
-    # 'navigation_depth': 4,  # Depth of the headers shown in the navigation bar
+    # "logo": {
+    #     "image_light": "assets/f1tenth_gym_color.svg",
+    #     "image_dark": "assets/f1tenth_gym.svg",
+    # },
+    "github_url": "https://github.com/f1tenth/f1tenth_planning",
+    "collapse_navigation": True,
+    "header_links_before_dropdown": 6,
+    # Add light/dark mode and documentation version switcher:
+    "navbar_end": ["theme-switcher", "navbar-icon-links"],
 }
-
-# VCS options: https://docs.readthedocs.io/en/latest/vcs.html#github
-html_context = {
-    "display_github": not is_i18n,  # Integrate GitHub
-    "github_user": "f1tenth",  # Username
-    "github_repo": "f1tenth_planning",  # Repo name
-    "github_version": "main",  # Version
-    "conf_py_path": "/",  # Path in the checkout to the docs root
-}
-
-html_favicon = "img/logo/f1_stickers_02.png"
-
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
-
-html_css_files = [
-    "css/custom.css",
-]
-
-html_js_files = [
-    "js/custom.js",
-]
-
-html_show_copyright = True
-html_show_sphinx = True
+# html_sidebars = {
+#     "**": ["search-field.html", "sidebar-nav-bs.html", "sidebar-ethical-ads.html"]
+# }
 html_last_updated_fmt = "%b %d, %Y"
+html_show_sourcelink = True
+
+copybutton_prompt_text = ">>> "
