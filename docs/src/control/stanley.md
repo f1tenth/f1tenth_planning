@@ -1,2 +1,0 @@
-(doc_stanley)=
-# Stanley

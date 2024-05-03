@@ -1,15 +1,9 @@
-.. F1TENTH Autonomous Racing Software Stack documentation master file, created by
-   sphinx-quickstart on Mon May  2 18:18:25 2022.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 F1TENTH Autonomous Racing Software Stack
 ====================================================
 
 Overview
 ----------
 This is the documentation for F1TENTH's Autonomous Racing Software Stack. The stack will be split into three main topics: Perception, Planning, and Control.
-We'll try to include all software algorithms we've encountered, tested, and used in our research in Autonomous Racing. This repo is constantly being updated. If you have algorithms that you've used in your Autonomous Racing applications and wish to make it open source, please consider :ref:`contribute <doc_contribution_guide>` to this repo.
 
 GitHub repo to the source code: https://github.com/f1tenth/f1tenth_planning
 
@@ -32,56 +26,97 @@ Otherwise, if you find this repo helpful in your work, please consider citing:
 
 Maintainers
 --------------
-**Hongrui Zheng**: hongruiz AT seas DOT upenn DOT edu
+**Hongrui Zheng, Luigi Berducci, Renukanandan Tumu, Ahmad Amine**
 
-**Johannes Betz**: joebetz AT seas DOT upenn DOT edu
+.. grid:: 2
+   :gutter: 4
+
+   .. grid-item-card::
+
+      Installation
+      ^^^^^^^^^^^^
+
+      Installation Guide
+
+      .. image:: assets/pip_logo.svg
+         :width: 100
+         :align: center
+      
+      +++
+
+      .. button-ref:: install/installation
+         :expand:
+         :color: secondary
+         :click-parent:
+
+         Installation
+
+   .. grid-item-card::
+
+      Quick Start
+      ^^^^^^^^^^^
+
+      Example usage
+
+      .. image:: assets/gym.svg
+         :width: 100
+         :align: center
+
+      +++
+
+      .. button-ref:: usage/index
+         :expand:
+         :color: secondary
+         :click-parent:
+
+         Quick Start
+
+   .. grid-item-card::
+
+      API
+      ^^^
+
+      API
+
+      .. image:: assets/gym.svg
+         :width: 100
+         :align: center
+
+      +++
+
+      .. button-ref:: api/index
+         :expand:
+         :color: secondary
+         :click-parent:
+
+         API
+
+   .. grid-item-card::
+
+      Contribute
+      ^^^^^^^^^^
+
+      Contribute
+
+      .. image:: assets/gym.svg
+         :width: 100
+         :align: center
+
+      +++
+
+      .. button-ref:: contribute/contribute
+         :expand:
+         :color: secondary
+         :click-parent:
+
+         Contribution Guide
 
 .. toctree::
-   :maxdepth: 1
-   :caption: Perception
-   :name: sec-perception
+   :maxdepth: 3
+   :titlesonly:
    :hidden:
 
-   perception/particle_filter
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Planning
-   :name: sec-planning
-   :hidden:
-
-   planning/wall_follow
-   planning/fgm
-   planning/lane_switcher
-   planning/lattice_planner
-   planning/graph_planner
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Control
-   :name: sec-control
-   :hidden:
-
-   control/pure_pursuit
-   control/stanley
-   control/lqr
-   control/kinematic_mpc
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Contributing
-   :name: sec-contribute
-   :hidden:
-
-   contribute
-
-
-.. Indices and tables
-.. ==================
-
-.. * :ref:`genindex`
-.. * :ref:`modindex`
-.. * :ref:`search`
+   install/installation
+   usage/index
+   api/index
+   contribute/contribute
