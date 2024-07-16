@@ -3,7 +3,7 @@ NMPC waypoint tracker using CasADi. On init, takes in model equation.
 """
 from dataclasses import dataclass, field
 import numpy as np
-from f1tenth_planning.utils.utils import nearest_point
+from f1tenth_planning.utils.utils import nearest_point, intersect_point
 from f1tenth_gym.envs.track import Track
 import casadi as ca
 
@@ -11,7 +11,7 @@ import casadi as ca
 class mpc_config:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, delta, v_x, yaw, yaw_rate, beta]
     NU: int = 2  # length of input vector: u = = [steering speed, acceleration]
-    TK: int = 8  # finite time horizon length kinematic
+    TK: int = 5  # finite time horizon length kinematic
     Rk: list = field(
         default_factory=lambda: np.diag([0.5, 4.0])
     )  # input cost matrix, penalty for inputs - [steering_speed, accel]
@@ -64,11 +64,15 @@ class NMPCPlanner:
         config: mpc_config = mpc_config(),
         debug=False,
     ):
+        # [x, y, delta, v_x, yaw, yaw_rate, beta]
         self.waypoints = [
             track.raceline.xs,
             track.raceline.ys,
-            track.raceline.yaws,
+            np.zeros_like(track.raceline.xs),
             track.raceline.vxs,
+            track.raceline.yaws,
+            np.zeros_like(track.raceline.xs),
+            np.zeros_like(track.raceline.xs),
         ]
         self.config = config
         self.oa = None
@@ -76,11 +80,44 @@ class NMPCPlanner:
         self.ox = None
         self.oy = None
         self.ref_path = None
+        self.ref_point = None
         self.debug = debug
         self.mpc_prob_init()
+        self.max_reacquire = 20.0
 
         self.drawn_waypoints = []
 
+    def _get_current_waypoint(self, lookahead_distance, position):
+        """
+        Finds the current waypoint on the look ahead circle intersection
+
+        Args:
+            lookahead_distance (float): lookahead distance to find next point to track
+            position (numpy.ndarray (2, )): current position of the vehicle (x, y)
+
+        Returns:
+            current_waypoint (numpy.ndarray (3, )): selected waypoint (x, y, velocity), None if no point is found
+        """
+
+        waypoints = np.array(self.waypoints).T
+        nearest_p, nearest_dist, t, i = nearest_point(position, waypoints[:, 0:2])
+        if nearest_dist < lookahead_distance:
+            self.lookahead_point, self.current_index, t2 = intersect_point(
+                position,
+                lookahead_distance,
+                waypoints[:, 0:2],
+                np.float32(i + t),
+                wrap=True,
+            )
+            if self.current_index is None:
+                return None
+            current_waypoint = waypoints[self.current_index, :]
+            return current_waypoint
+        elif nearest_dist < self.max_reacquire:
+            return waypoints[i, :]
+        else:
+            return None
+        
     def render_waypoints(self, e):
         """
         update waypoints being drawn by EnvRenderer
@@ -95,6 +132,14 @@ class NMPCPlanner:
         if self.ref_path is not None:
             points = self.ref_path[:2].T
             e.render_lines(points, color=(0, 128, 0), size=2)
+
+    def render_goal_state(self, e):
+        """
+        update goal state being drawn by EnvRenderer
+        """
+        if self.ref_point is not None:
+            points = self.ref_point[:2][None]
+            e.render_points(points, color=(0, 128, 0), size=3)
 
     def render_mpc_sol(self, e):
         """
@@ -424,19 +469,26 @@ class NMPCPlanner:
                 "Please set waypoints to track during planner instantiation or when calling plan()"
             )
 
-        if current_state["linear_vel_x"] < 0.1:
-            return self.config.MAX_ACCEL, 0.0
+        # if current_state["linear_vel_x"] < 0.1:
+        #     return self.config.MAX_ACCEL, 0.0
 
-        # calculate the reference trajectory
-        self.ref_path = self.calc_ref_trajectory(
-            current_state, self.waypoints[0], self.waypoints[1], self.waypoints[2], self.waypoints[3]
-        )
+        # # calculate the reference trajectory
+        # self.ref_path = self.calc_ref_trajectory(
+        #     current_state, self.waypoints[0], self.waypoints[1], self.waypoints[2], self.waypoints[3]
+        # )
 
-        # Goal state is the last point in the reference trajectory
-        goal_state = self.ref_path[:, -1]
+        # # Goal state is the last point in the reference trajectory
+        # goal_state = self.ref_path[:, -1]
 
-        # Goal velocity is that of the first point in the reference trajectory
-        goal_state[3] = self.ref_path[3, 0]
+        # # Goal velocity is that of the first point in the reference trajectory
+        # goal_state[3] = self.ref_path[3, 0]
+        
+        v_lookahead = max(current_state['linear_vel_x'], 0.1)
+        lookahead_distance = v_lookahead * (self.config.TK * self.config.DTK)
+        goal_state = self._get_current_waypoint(lookahead_distance, np.array([current_state["pose_x"], current_state["pose_y"]]))
+        
+        # Ref point is the goal_state
+        self.ref_point = goal_state.copy()
         
         # solve the NMPC problem
         oa, odelta_v = self.mpc_prob_solve(goal_state, current_state)
