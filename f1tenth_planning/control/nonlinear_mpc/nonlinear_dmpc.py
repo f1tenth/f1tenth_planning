@@ -297,6 +297,8 @@ class NMPCPlanner:
             st_next_RK4 = st + (self.config.DTK / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
             g = ca.vertcat(g, st_next - st_next_RK4)
 
+        cost_fn = cost_fn + (X[:, -1] - P[:, -1]).T @ self.config.Qf @ (X[:, -1] - P[:, -1])
+        
         OPT_variables = ca.vertcat(
             X.reshape((-1, 1)),   # Example: 3x11 ---> 33x1 where 3=states, 11=N+1
             U.reshape((-1, 1))
