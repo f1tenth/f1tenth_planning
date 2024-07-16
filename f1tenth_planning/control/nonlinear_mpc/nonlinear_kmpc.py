@@ -4,7 +4,7 @@ NMPC waypoint tracker using CasADi. On init, takes in model equation.
 from dataclasses import dataclass, field
 import numpy as np
 from f1tenth_planning.utils.utils import nearest_point
-from f1tenth_gym.gym.f110_gym.envs.track import Track
+from f1tenth_gym.envs.track import Track
 import casadi as ca
 
 @dataclass
