@@ -487,8 +487,11 @@ class NMPCPlanner:
         lookahead_distance = v_lookahead * (self.config.TK * self.config.DTK)
         goal_state = self._get_current_waypoint(lookahead_distance, np.array([current_state["pose_x"], current_state["pose_y"]]))
         
-        # Ref point is the goal_state
+        # Ref point is the goal_state, with the velocity from the closest point
         self.ref_point = goal_state.copy()
+
+        closest_point = self._get_current_waypoint(0.0, np.array([current_state["pose_x"], current_state["pose_y"]]))
+        self.ref_point[3] = closest_point[3]
         
         # solve the NMPC problem
         oa, odelta_v = self.mpc_prob_solve(goal_state, current_state)
