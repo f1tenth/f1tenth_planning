@@ -29,7 +29,7 @@ Last Modified: 5/4/22
 
 import numpy as np
 import gymnasium as gym
-import f110_gym
+import f1tenth_gym
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
@@ -41,7 +41,7 @@ def main():
 
     # create environment
     env = gym.make(
-        "f110_gym:f110-v0",
+        "f1tenth_gym:f1tenth-v0",
         config={
             "map": "Spielberg",
             "num_agents": 1,

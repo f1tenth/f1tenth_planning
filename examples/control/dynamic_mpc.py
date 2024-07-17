@@ -29,7 +29,7 @@ Last Modified: 8/1/22
 
 import numpy as np
 import gymnasium as gym
-from f110_gym.envs import F110Env
+from f1tenth_gym.envs import F110Env
 import time
 
 from f1tenth_planning.control.dynamic_mpc.dynamic_mpc import STMPCPlanner
@@ -43,7 +43,7 @@ def main():
 
     # create environment
     env: F110Env = gym.make(
-        "f110_gym:f110-v0",
+        "f1tenth_gym:f1tenth-v0",
         config={
             "map": "Spielberg",
             "num_agents": 1,

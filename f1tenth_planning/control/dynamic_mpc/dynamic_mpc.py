@@ -36,7 +36,6 @@ from f1tenth_planning.utils.utils import nearest_point, pi_2_pi, quat_2_rpy
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from cvxpy.atoms.affine.wraps import psd_wrap
-from pyglet.gl import GL_POINTS
 
 
 @dataclass
