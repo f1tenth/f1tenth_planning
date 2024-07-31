@@ -99,7 +99,7 @@ def vehicle_dynamics_ks_cog(x, u_init, lwb, lf, v_min, v_max, delta_min, delta_m
     u.append(acceleration_constraints(x[3], u_init[1], v_min, v_max, a_min, a_max, v_switch)) # different name u_init/u due to side effects of u
 
     # slip angle (beta) from vehicle kinematics
-    beta = np.atan2(np.tan(x[2]) * lf, lwb)
+    beta = np.arctan2(np.tan(x[2]) * lf, lwb)
 
     # system dynamics
     f = [x[3] * np.cos(beta + x[4]),
@@ -285,9 +285,9 @@ class ST_UKF():
         x[1] = np.sum(np.dot(sigmas[:, 1], Wm))
         x[2] = np.sum(np.dot(sigmas[:, 2], Wm))
         x[3] = np.sum(np.dot(sigmas[:, 3], Wm))
-        x[4] = np.atan2(sum_sin_yaw, sum_cos_yaw)
+        x[4] = np.arctan2(sum_sin_yaw, sum_cos_yaw)
         x[5] = np.sum(np.dot(sigmas[:, 5], Wm))
-        x[6] = np.atan2(sum_sin_beta, sum_cos_beta)
+        x[6] = np.arctan2(sum_sin_beta, sum_cos_beta)
         return x
 
     def z_mean(self, sigmas, Wm):
