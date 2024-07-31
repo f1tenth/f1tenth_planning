@@ -21,26 +21,27 @@
 # SOFTWARE.
 
 """
-UKF Estimator example, uses the UKF to estimate the state of the vehicle and uses the PurePursuit controller to track the waypoints.
+UKF Estimator example, uses the UKF to estimate the state of the vehicle and uses the Kinematic MPC controller to track the waypoints.
 
 Author: Ahmad Amine
 """
 
 import numpy as np
 import gymnasium as gym
+from f110_gym.envs import F110Env
+import time
 
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
 
-from f110_gym.envs.f110_env import F110Env
-from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
+from f1tenth_planning.control.kinematic_mpc.kinematic_mpc import KMPCPlanner
 from f1tenth_planning.estimation.ukf_estimator import ST_UKF
 
 
 def main():
     """
-    Pure Pursuit example. This example uses fixed waypoints throughout the 2 laps.
+    STMPC example. This example uses fixed waypoints throughout the 2 laps.
     For an example using dynamic waypoints, see the lane switcher example.
     """
 
@@ -53,9 +54,9 @@ def main():
             "num_agents": num_agents,
             "timestep": 0.01,
             "integrator": "rk4",
-            "control_input": ["speed", "steering_angle"],
+            "control_input": ["accl", "steering_speed"],
             "model": "st",
-            "observation_config": {"type": "kinematic_state"},
+            "observation_config": {"type": "dynamic_state"},
             "params": {"mu": 1.0},
             "reset_config": {"type": "random_static"},
         },
@@ -63,24 +64,22 @@ def main():
     )
     track = env.unwrapped.track
 
-
     # create planner
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
-    planner = PurePursuitPlanner(waypoints=waypoints)
+    planner = KMPCPlanner(track=track, debug=False)
+    planner.config.dlk = (
+        track.raceline.ss[1] - track.raceline.ss[0]
+    )  # waypoint spacing
+    env.unwrapped.add_render_callback(planner.render_waypoints)
+    env.unwrapped.add_render_callback(planner.render_local_plan)
+    env.unwrapped.add_render_callback(planner.render_mpc_sol)
 
     # create estimator
     params = env.default_config()["params"]
     params['g'] = 9.81 # Add gravity to the parameters
     params['a_min'] = -5.0 # Minimum acceleration
     estimator = ST_UKF(params, dt=0.01)
-    
-    env.add_render_callback(planner.render_waypoints)
-    env.add_render_callback(planner.render_local_plan)
-    env.add_render_callback(planner.render_lookahead_point)
 
     # reset environment
-    track = env.unwrapped.track
     poses = np.array(
         [
             [
@@ -94,22 +93,24 @@ def main():
     done = False
     env.render()
 
-    # run simulation
     laptime = 0.0
+    start = time.time()
     while not done:
-        steer, speed = planner.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            lookahead_distance=0.8,
-        )
+        steerv, accl = planner.plan(obs["agent_0"])
         obs, timestep, terminated, truncated, infos = env.step(
-            np.array([[steer, speed]])
+            np.array([[steerv, accl]])
         )
         done = terminated or truncated
         laptime += timestep
         env.render()
-    print("Sim elapsed time:", laptime)
+
+        print(
+            "speed: {}, steer vel: {}, accl: {}".format(
+                obs["agent_0"]["linear_vel_x"], steerv, accl
+            )
+        )
+
+    print("Sim elapsed time:", laptime, "Real elapsed time:", time.time() - start)
 
 
 if __name__ == "__main__":
