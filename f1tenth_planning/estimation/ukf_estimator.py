@@ -174,13 +174,13 @@ class ST_UKF():
         self.v_switch = v_switch
         
         # State dimension
-        dim_x = 7
+        self.dim_x = 7
 
         # Measurement dimension
         dim_z = 6
 
         # Initial state mean
-        x = np.zeros(dim_x)
+        x = np.zeros(self.dim_x)
 
         # Initial state covariance
         self.P = P
@@ -194,14 +194,14 @@ class ST_UKF():
         # UKF parameters
         # Recommended parameters as per the book
         beta = 2 # Van der Merwe suggests beta = 2 is a good choice for Gaussian problems
-        kappa = max(0, 3 - dim_x) # kappa is an arbitrary constant
+        kappa = max(0, 3 - self.dim_x) # kappa is an arbitrary constant
         alpha = 0.001 # alpha is a scaling parameter, 10^-3 is a common value
-        self.points = MerweScaledSigmaPoints(n=dim_x, alpha=alpha, beta=beta, kappa=kappa)
+        self.points = MerweScaledSigmaPoints(n=self.dim_x, alpha=alpha, beta=beta, kappa=kappa)
 
         # UKF instance
-        self.filter = UKF(dim_x=dim_x, dim_z=dim_z,
+        self.filter = UKF(dim_x=self.dim_x, dim_z=dim_z,
                           fx=self.vehicle_dynamics_st, hx=self.measurement,
-                          residual_x=None, residual_z=None, state_mean=None, z_mean=None,
+                          residual_x=self.residual_x, residual_z=self.residual_h, state_mean=self.state_mean, z_mean=self.z_mean,
                           dt=dt, points=self.points)
 
         # Initialize the UKF
@@ -255,42 +255,58 @@ class ST_UKF():
         return f
 
     def measurement(self, x):
-        # measurement function - convert state to a measurement
+        # measurement function - convert state to a measurement, all except slip angle
         return x[:6]
     
-    def residual_h(a, b):
+    def residual_h(self, a, b):
         y = a - b
-        # # data in format [dist_1, bearing_1, dist_2, bearing_2,...]
-        # for i in range(0, len(y), 2):
-        #     y[i + 1] = normalize_angle(y[i + 1])
+        # Normalize heading error and slip angle error
+        y[4] = normalize_angle(y[4])
         return y
 
-    def residual_x(a, b):
+    def residual_x(self, a, b):
         y = a - b
-        # y[2] = normalize_angle(y[2])
+
+        # Normalize heading error and slip angle error
+        y[4] = normalize_angle(y[4])
+        y[6] = normalize_angle(y[6])
         return y
 
-    def state_mean(sigmas, Wm):
-        x = np.zeros(dim_x)
+    def state_mean(self, sigmas, Wm):
+        # state is [x, y, delta, vx, yaw, yaw_rate, slip_angle]
+        x = np.zeros(self.dim_x)
 
-        # sum_sin = np.sum(np.dot(np.sin(sigmas[:, 2]), Wm))
-        # sum_cos = np.sum(np.dot(np.cos(sigmas[:, 2]), Wm))
-        # x[0] = np.sum(np.dot(sigmas[:, 0], Wm))
-        # x[1] = np.sum(np.dot(sigmas[:, 1], Wm))
-        # x[2] = np.atan2(sum_sin, sum_cos)
+        sum_sin_yaw = np.sum(np.dot(np.sin(sigmas[:, 4]), Wm))
+        sum_cos_yaw = np.sum(np.dot(np.cos(sigmas[:, 4]), Wm))
+
+        sum_sin_beta = np.sum(np.dot(np.sin(sigmas[:, 6]), Wm))
+        sum_cos_beta = np.sum(np.dot(np.cos(sigmas[:, 6]), Wm))
+
+        x[0] = np.sum(np.dot(sigmas[:, 0], Wm))
+        x[1] = np.sum(np.dot(sigmas[:, 1], Wm))
+        x[2] = np.sum(np.dot(sigmas[:, 2], Wm))
+        x[3] = np.sum(np.dot(sigmas[:, 3], Wm))
+        x[4] = np.atan2(sum_sin_yaw, sum_cos_yaw)
+        x[5] = np.sum(np.dot(sigmas[:, 5], Wm))
+        x[6] = np.atan2(sum_sin_beta, sum_cos_beta)
         return x
 
-    def z_mean(sigmas, Wm):
+    def z_mean(self, sigmas, Wm):
         z_count = sigmas.shape[1]
-        x = np.zeros(z_count)
+        z = np.zeros(z_count)
 
-        # for z in range(0, z_count, 2):
-        #     sum_sin = np.sum(np.dot(np.sin(sigmas[:, z+1]), Wm))
-        #     sum_cos = np.sum(np.dot(np.cos(sigmas[:, z+1]), Wm))
+        # Measurement is [x, y, delta, vx, yaw, yaw_rate]
+        z[0] = np.sum(np.dot(sigmas[:, 0], Wm))
+        z[1] = np.sum(np.dot(sigmas[:, 1], Wm))
+        z[2] = np.sum(np.dot(sigmas[:, 2], Wm))
+        z[3] = np.sum(np.dot(sigmas[:, 3], Wm))
 
-        #     x[z] = np.sum(np.dot(sigmas[:,z], Wm))
-        #     x[z+1] = np.atan2(sum_sin, sum_cos)
-        return x
+        sum_sin_yaw = np.sum(np.dot(np.sin(sigmas[:, 4]), Wm))
+        sum_cos_yaw = np.sum(np.dot(np.cos(sigmas[:, 4]), Wm))
+        z[4] = np.arctan2(sum_sin_yaw, sum_cos_yaw)
+
+        z[5] = np.sum(np.dot(sigmas[:, 5], Wm))
+        return z
 
     def step(self, u, z):
         self.filter.predict(u)
