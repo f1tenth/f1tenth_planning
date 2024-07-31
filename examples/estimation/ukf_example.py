@@ -33,7 +33,9 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../")
 
+from f110_gym.envs.f110_env import F110Env
 from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
+from f1tenth_planning.estimation.ukf_estimator import ST_UKF
 
 
 def main():
@@ -43,22 +45,36 @@ def main():
     """
 
     # create environment
-    env = gym.make(
-        "f1tenth_gym:f1tenth-v0",
+    num_agents = 1
+    env : F110Env = gym.make(
+        "f110_gym:f110-v0",
         config={
             "map": "Spielberg",
-            "num_agents": 1,
-            "control_input": "speed",
+            "num_agents": num_agents,
+            "timestep": 0.01,
+            "integrator": "rk4",
+            "control_input": ["speed", "steering_angle"],
+            "model": "st",
             "observation_config": {"type": "kinematic_state"},
+            "params": {"mu": 1.0},
+            "reset_config": {"type": "random_static"},
         },
         render_mode="human",
     )
+    track = env.unwrapped.track
+
 
     # create planner
     raceline = env.unwrapped.track.raceline
     waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs], axis=1)
     planner = PurePursuitPlanner(waypoints=waypoints)
 
+    # create estimator
+    params = env.default_config()["params"]
+    params['g'] = 9.81 # Add gravity to the parameters
+    params['a_min'] = -5.0 # Minimum acceleration
+    estimator = ST_UKF(params, dt=0.01)
+    
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)
     env.add_render_callback(planner.render_lookahead_point)

@@ -148,30 +148,29 @@ def vehicle_dynamics_ks_cog(x, u_init, lwb, lf, v_min, v_max, delta_min, delta_m
     
 '''
 class ST_UKF():
-    def __init__(self, lf, lr, m, I, h, C_Sf, C_Sr, mu, g, 
-                 dt, v_min, v_max, delta_min, delta_max, deltav_min, deltav_max, a_min, a_max, v_switch, 
+    def __init__(self, vehicle_params, dt,
                  P=np.eye(7), Q=np.eye(7), R=np.eye(6)):
         # Vehicle parameters
-        self.lf = lf
-        self.lr = lr
-        self.m = m
-        self.I = I
-        self.h = h
-        self.C_Sf = C_Sf
-        self.C_Sr = C_Sr
-        self.mu = mu
-        self.g = g
+        self.lf   = vehicle_params['lf']
+        self.lr   = vehicle_params['lr']
+        self.m    = vehicle_params['m']
+        self.I    = vehicle_params['I']
+        self.h    = vehicle_params['h']
+        self.C_Sf = vehicle_params['C_Sf']
+        self.C_Sr = vehicle_params['C_Sr']
+        self.mu   = vehicle_params['mu']
+        self.g    = vehicle_params['g']
 
         # Constraints
-        self.v_min = v_min
-        self.v_max = v_max
-        self.delta_min = delta_min
-        self.delta_max = delta_max
-        self.deltav_min = deltav_min
-        self.deltav_max = deltav_max
-        self.a_min = a_min
-        self.a_max = a_max
-        self.v_switch = v_switch
+        self.v_min      = vehicle_params['v_min']
+        self.v_max      = vehicle_params['v_max']
+        self.delta_min  = vehicle_params['s_min']
+        self.delta_max  = vehicle_params['s_max']
+        self.deltav_min = vehicle_params['sv_min']
+        self.deltav_max = vehicle_params['sv_max']
+        self.a_min      = vehicle_params['a_min']
+        self.a_max      = vehicle_params['a_max']
+        self.v_switch   = vehicle_params['v_switch']
         
         # State dimension
         self.dim_x = 7
@@ -201,7 +200,7 @@ class ST_UKF():
         # UKF instance
         self.filter = UKF(dim_x=self.dim_x, dim_z=dim_z,
                           fx=self.vehicle_dynamics_st, hx=self.measurement,
-                          residual_x=self.residual_x, residual_z=self.residual_h, state_mean=self.state_mean, z_mean=self.z_mean,
+                          residual_x=self.residual_x, residual_z=self.residual_h, x_mean_fn=self.state_mean, z_mean_fn=self.z_mean,
                           dt=dt, points=self.points)
 
         # Initialize the UKF
