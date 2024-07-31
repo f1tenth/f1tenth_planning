@@ -77,7 +77,7 @@ def main():
     params = env.default_config()["params"]
     params['g'] = 9.81 # Add gravity to the parameters
     params['a_min'] = -5.0 # Minimum acceleration
-    estimator = ST_UKF(params, dt=0.01)
+    estimator = ST_UKF(params, dt=0.01, P=10*np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0]), Q=10*np.diag([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]), R=10*np.diag([0.1, 0.1, 0.1, 0.1, 0.1, 0.1]))
 
     # reset environment
     poses = np.array(
@@ -97,9 +97,22 @@ def main():
     start = time.time()
     while not done:
         steerv, accl = planner.plan(obs["agent_0"])
+        u = np.array([[steerv, accl]])
         obs, timestep, terminated, truncated, infos = env.step(
-            np.array([[steerv, accl]])
+            u
         )
+        # z = [x, y, delta, vx, yaw, yaw_rate]
+        z = np.array([obs["agent_0"]["pose_x"],
+                      obs["agent_0"]["pose_y"],
+                      obs["agent_0"]["delta"],
+                      obs["agent_0"]["linear_vel_x"],
+                      obs["agent_0"]["pose_theta"],
+                      obs["agent_0"]["ang_vel_z"]])
+        estimator.step(u.flatten(), z)
+        # Get slip angle from the estimator
+        slip_angle = estimator.get_state()[6]
+        print(f"Estimated slip angle: {slip_angle} | True slip angle: {obs['agent_0']['beta']}")
+
         done = terminated or truncated
         laptime += timestep
         env.render()
