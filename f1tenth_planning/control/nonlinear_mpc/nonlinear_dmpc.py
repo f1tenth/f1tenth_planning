@@ -257,7 +257,7 @@ class NMPCPlanner:
         fsteer = lambda delta, vdelta: vdelta # ideal, continuous time steering-speed
         facc = lambda speed, along: along # ideal, continuous time acceleration
         
-        v_s = 2.0
+        v_s = 3.0
         v_b = 0.1
         v_min = v_s/2
 
