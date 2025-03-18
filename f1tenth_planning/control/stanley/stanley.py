@@ -75,8 +75,8 @@ class StanleyPlanner(Controller):
         if self.target_point is not None:
             points = self.target_point[:2][None]  # shape (1, 2)
             if self.target_point_renderer is None:
-                self.target_point_renderer = e.render_closed_lines(
-                    points, color=(128, 0, 0), size=2
+                self.target_point_renderer = e.render_points(
+                    points, color=(128, 0, 0), size=4
                 )
             else:
                 self.target_point_renderer.setData(points)
