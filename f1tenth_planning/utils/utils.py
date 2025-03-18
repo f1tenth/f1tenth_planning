@@ -307,13 +307,7 @@ def get_rotation_matrix(theta):
 
 @njit(cache=True)
 def pi_2_pi(angle):
-    if angle > math.pi:
-        return angle - 2.0 * math.pi
-    if angle < -math.pi:
-        return angle + 2.0 * math.pi
-
-    return angle
-
+    return ((angle + math.pi) % (2.0 * math.pi)) - math.pi
 
 # @njit(cache=True)
 def sample_traj(clothoid, npts):
