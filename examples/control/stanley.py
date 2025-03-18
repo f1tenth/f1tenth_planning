@@ -30,6 +30,9 @@ Last Modified: 5/4/22
 import numpy as np
 import gymnasium as gym
 import f1tenth_gym
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
@@ -50,13 +53,7 @@ def main():
         },
         render_mode="human",
     )
-
-    # reset environment
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack(
-        [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
-    )
-    planner = StanleyPlanner(waypoints=waypoints)
+    planner = StanleyPlanner(track=env.unwrapped.track)
 
     env.add_render_callback(planner.render_waypoints)
     env.add_render_callback(planner.render_local_plan)

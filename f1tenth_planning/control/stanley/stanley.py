@@ -27,6 +27,9 @@ Author: Hongrui Zheng, Johannes Betz
 Last Modified: 5/1/22
 """
 
+from f1tenth_gym.envs.track import Track
+from f1tenth_planning.control.config.dynamics_config import dynamics_config
+from f1tenth_planning.control.controller import Controller
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
 
@@ -34,7 +37,7 @@ import numpy as np
 import math
 
 
-class StanleyPlanner:
+class StanleyPlanner(Controller):
     """
     This is the class for the Front Weeel Feedback Controller (Stanley) for tracking the path of the vehicle
     References:
@@ -50,19 +53,20 @@ class StanleyPlanner:
         waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
     """
 
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.wheelbase = wheelbase
-        self.waypoints = waypoints
-        self.drawn_waypoints = []
+    def __init__(self, track: Track, params : dynamics_config = dynamics_config()):
+        super(StanleyPlanner, self).__init__(track, params)
+        self.waypoints = np.vstack([
+            track.raceline.xs,
+            track.raceline.ys,
+            track.raceline.vxs,
+            track.raceline.yaws
+        ]).T
+        
+        self.target_point_renderer = None
+        self.local_plan_render = None
         self.target_point = None
         self.target_index = None
 
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
 
     def render_target_point(self, e):
         """
@@ -70,15 +74,25 @@ class StanleyPlanner:
         """
         if self.target_point is not None:
             points = self.target_point[:2][None]  # shape (1, 2)
-            e.render_points(points, color=(0, 0, 128), size=2)
+            if self.target_point_renderer is None:
+                self.target_point_renderer = e.render_closed_lines(
+                    points, color=(128, 0, 0), size=2
+                )
+            else:
+                self.target_point_renderer.setData(points)
 
     def render_local_plan(self, e):
         """
         update waypoints being drawn by EnvRenderer
         """
         if self.target_index is not None:
-            points = self.waypoints[self.target_index : self.target_index + 10, :2]
-            e.render_lines(points, color=(0, 128, 0), size=2)
+            points = self.waypoints[self.target_index : self.target_index + 5, :2]
+            if self.local_plan_render is None:
+                self.local_plan_render = e.render_closed_lines(
+                    points, color=(0, 0, 128), size=1
+                )
+            else:
+                self.local_plan_render.setData(points)
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
@@ -89,8 +103,8 @@ class StanleyPlanner:
         """
 
         # distance to the closest point to the front axle center
-        fx = vehicle_state[0] + self.wheelbase * math.cos(vehicle_state[2])
-        fy = vehicle_state[1] + self.wheelbase * math.sin(vehicle_state[2])
+        fx = vehicle_state[0] + self.params.WHEELBASE * math.cos(vehicle_state[2])
+        fy = vehicle_state[1] + self.params.WHEELBASE * math.sin(vehicle_state[2])
         position_front_axle = np.array([fx, fy])
         self.target_point, nearest_dist, t, self.target_index = nearest_point(
             position_front_axle, self.waypoints[:, 0:2]
