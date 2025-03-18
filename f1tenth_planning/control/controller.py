@@ -2,12 +2,12 @@ from __future__ import annotations
 from abc import abstractmethod, ABC
 
 import numpy as np
-from f110_gym.envs.track import Track
-
+from f1tenth_gym.envs.track import Track
+from f1tenth_planning.control.config.dynamics_config import dynamics_config
 
 class Controller(ABC):
     @abstractmethod
-    def __init__(self, track: Track, params: dict | str = None) -> None:
+    def __init__(self, track: Track, params: dynamics_config) -> None:
         """
         Initialize controller.
 
@@ -15,7 +15,10 @@ class Controller(ABC):
             track (Track): track object with raceline
             params (dict | str, optional): dictionary or path to yaml with controller-specific parameters
         """
-        raise NotImplementedError("controller init method not implemented")
+        self.track = track
+        self.params = params
+        self.waypoints = None
+        self.waypoint_render = None
 
     @abstractmethod
     def plan(self, state: dict) -> np.ndarray:
@@ -31,18 +34,18 @@ class Controller(ABC):
         raise NotImplementedError("control method not implemented")
 
     @property
-    def color(self) -> tuple[int, int, int]:
+    def waypoints_color(self) -> tuple[int, int, int]:
         """
-        Color as rgb tuple used for controller-specific render.
+        Color as rgb tuple used for rendering waypoints (global plan).
 
         For example, we can visualize trajectories of different colors for different agents by changing this color.
         """
-        return 128, 0, 0
+        return 0, 128, 0
 
-    @color.setter
-    def color(self, value: tuple[int, int, int]) -> None:
+    @waypoints_color.setter
+    def waypoints_color(self, value: tuple[int, int, int]) -> None:
         """
-        Set color as rgb tuple used for controller-specific render.
+        Set color as rgb tuple used for rendering waypoints (global plan).
         """
         assert len(value) == 3, f"color must be a tuple of length 3, got {value}"
         self.color = value
@@ -53,4 +56,9 @@ class Controller(ABC):
         """
         if self.waypoints is not None:
             points = self.waypoints[:, :2]
-            e.render_closed_lines(points, color=self.color, size=1)
+            if self.waypoint_render is None:
+                self.waypoint_render = e.render_closed_lines(
+                    points, color=self.waypoints_color, size=1
+                )
+            else:
+                self.waypoint_render.setData(points)
