@@ -40,20 +40,24 @@ import warnings
 
 class PurePursuitPlanner(Controller):
     """
-    Pure pursuit tracking controller
+    Pure pursuit tracking controller.
     Reference: Coulter 1992, https://www.ri.cmu.edu/pub_files/pub3/coulter_r_craig_1992_1/coulter_r_craig_1992_1.pdf
 
-    All vehicle pose used by the planner should be in the map frame.
+    This controller uses a lookahead circle to determine the target waypoint and computes the
+    required steering and speed commands based on the vehicle's pose and a set of static or dynamic waypoints.
 
     Args:
-        waypoints (numpy.ndarray [N x 4], optional): static waypoints to track
+        track (Track): Track instance containing the raceline information.
+        params (dynamics_config, optional): Vehicle dynamic parameters. Defaults to dynamics_config().
+        max_reacquire (float, optional): Maximum radius (in meters) to reacquire the current waypoint in case the vehicle drifts. Defaults to 20.0.
 
     Attributes:
-        max_reacquire (float): maximum radius (meters) for reacquiring current waypoints
-        waypoints (numpy.ndarray [N x 4]): static list of waypoints, columns are [x, y, velocity, heading]
+        waypoints (numpy.ndarray [N x 4]): Static list of waypoints to track; columns correspond to [x, y, velocity, heading].
+        lookahead_point (numpy.ndarray or None): The current lookahead point computed on the track.
+        target_index (int or None): Index of the current waypoint.
     """
 
-    def __init__(self, track: Track, params : dynamics_config = dynamics_config(), max_reacquire=20.0):
+    def __init__(self, track: Track, params: dynamics_config = dynamics_config(), max_reacquire=20.0):
         super(PurePursuitPlanner, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
@@ -64,14 +68,17 @@ class PurePursuitPlanner(Controller):
         
         self.max_reacquire = max_reacquire
         self.lookahead_point = None
-        self.current_index = None
+        self.target_index = None
 
         self.lookahead_point_renderer = None
         self.local_plan_render = None
 
     def render_lookahead_point(self, e):
         """
-        Callback to render the lookahead point.
+        Callback to render the lookahead point on the environment.
+
+        Args:
+            e: The environment renderer instance used for drawing.
         """
         if self.lookahead_point is not None:
             points = self.lookahead_point[:2][None]  # shape (1, 2)
@@ -84,10 +91,13 @@ class PurePursuitPlanner(Controller):
 
     def render_local_plan(self, e):
         """
-        update waypoints being drawn by EnvRenderer
+        Render the local plan (series of waypoints) on the environment.
+
+        Args:
+            e: The environment renderer instance used for drawing.
         """
-        if self.current_index is not None:
-            points = self.waypoints[self.current_index : self.current_index + 10, :2]
+        if self.target_index is not None:
+            points = self.waypoints[self.target_index : self.target_index + 10, :2]
             if self.local_plan_render is None:
                 self.local_plan_render = e.render_closed_lines(
                     points, color=(0, 0, 128), size=1
@@ -97,32 +107,32 @@ class PurePursuitPlanner(Controller):
 
     def _get_current_waypoint(self, lookahead_distance, position, theta):
         """
-        Finds the current waypoint on the look ahead circle intersection
+        Finds the current waypoint on the lookahead circle intersection.
 
         Args:
-            lookahead_distance (float): lookahead distance to find next point to track
-            position (numpy.ndarray (2, )): current position of the vehicle (x, y)
-            theta (float): current vehicle heading
+            lookahead_distance (float): The lookahead distance to pick the next tracking point.
+            position (numpy.ndarray): Current position of the vehicle as [x, y].
+            theta (float): Current heading angle of the vehicle in radians.
 
         Returns:
-            current_waypoint (numpy.ndarray (3, )): selected waypoint (x, y, velocity), None if no point is found
+            numpy.ndarray or None: The selected waypoint as [x, y, velocity],
+            or None if no waypoint is found within the constraints.
         """
-
         nearest_p, nearest_dist, t, i = nearest_point(position, self.waypoints[:, 0:2])
         if nearest_dist < lookahead_distance:
-            self.lookahead_point, self.current_index, t2 = intersect_point(
+            self.lookahead_point, self.target_index, t2 = intersect_point(
                 position,
                 lookahead_distance,
                 self.waypoints[:, 0:2],
                 np.float32(i + t),
                 wrap=True,
             )
-            if self.current_index is None:
+            if self.target_index is None:
                 return None
             current_waypoint = np.array(
                 [
-                    self.waypoints[self.current_index, 0],
-                    self.waypoints[self.current_index, 1],
+                    self.waypoints[self.target_index, 0],
+                    self.waypoints[self.target_index, 1],
                     self.waypoints[i, 2],
                 ]
             )
@@ -134,22 +144,24 @@ class PurePursuitPlanner(Controller):
 
     def plan(self, pose_x, pose_y, pose_theta, lookahead_distance, waypoints=None):
         """
-        Planner plan function overload for Pure Pursuit, returns acutation based on current state
+        Computes the steering angle and speed command based on the current vehicle state
+        and the next waypoint derived from the lookahead circle.
 
         Args:
-            pose_x (float): current vehicle x position
-            pose_y (float): current vehicle y position
-            pose_theta (float): current vehicle heading angle
-            lookahead_distance (float): lookahead distance to find next waypoint to track
-            waypoints (numpy.ndarray [N x 4], optional): list of dynamic waypoints to track, columns are [x, y, velocity, heading]
+            pose_x (float): Current x-position of the vehicle.
+            pose_y (float): Current y-position of the vehicle.
+            pose_theta (float): Current heading of the vehicle in radians.
+            lookahead_distance (float): Distance ahead of the vehicle to determine the target waypoint.
+            waypoints (numpy.ndarray [N x 4], optional): Optional dynamic waypoints to use instead of the static raceline.
+                Each waypoint should have columns [x, y, velocity, heading].
 
         Returns:
-            speed (float): commanded vehicle longitudinal velocity
-            steering_angle (float):  commanded vehicle steering angle
+            tuple: (steering_angle (float), speed (float)) commands for the vehicle.
+            If no valid lookahead point is found, returns (0.0, 0.0) after issuing a warning.
         """
         if waypoints is not None:
             if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
-                raise ValueError("Waypoints needs to be a (Nxm), m >= 3, numpy array!")
+                raise ValueError("Waypoints need to be a (N x m) numpy array with m >= 3!")
             self.waypoints = waypoints
         else:
             if self.waypoints is None:

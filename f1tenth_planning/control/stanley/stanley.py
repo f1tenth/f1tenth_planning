@@ -39,21 +39,23 @@ import math
 
 class StanleyPlanner(Controller):
     """
-    This is the class for the Front Weeel Feedback Controller (Stanley) for tracking the path of the vehicle
+    Stanley Planner implements the front wheel feedback controller for path tracking.
+    
     References:
-    - Stanley: The robot that won the DARPA grand challenge: http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
-    - Autonomous Automobile Path Tracking: https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
+      - Stanley: The robot that won the DARPA grand challenge:
+        http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
+      - Autonomous Automobile Path Tracking:
+        https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
 
     Args:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
-
+        track (Track): the racetrack instance containing the raceline information.
+        params (dynamics_config, optional): the vehicle dynamics configuration.
+    
     Attributes:
-        wheelbase (float, optional, default=0.33): wheelbase of the vehicle
-        waypoints (numpy.ndarray [N, 4], optional, default=None): waypoints to track, columns are [x, y, velocity, heading]
+        waypoints (numpy.ndarray [N, 4]): waypoints to track, with columns [x, y, velocity, heading].
     """
 
-    def __init__(self, track: Track, params : dynamics_config = dynamics_config()):
+    def __init__(self, track: Track, params: dynamics_config = dynamics_config()):
         super(StanleyPlanner, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
@@ -67,10 +69,12 @@ class StanleyPlanner(Controller):
         self.target_point = None
         self.target_index = None
 
-
     def render_target_point(self, e):
         """
-        Callback to render the target point.
+        Render the target point on the environment.
+
+        Args:
+            e: rendering engine instance used to visualize the target point.
         """
         if self.target_point is not None:
             points = self.target_point[:2][None]  # shape (1, 2)
@@ -83,7 +87,10 @@ class StanleyPlanner(Controller):
 
     def render_local_plan(self, e):
         """
-        update waypoints being drawn by EnvRenderer
+        Update the drawn waypoints (local plan) on the environment.
+
+        Args:
+            e: rendering engine instance used to visualize the local plan.
         """
         if self.target_index is not None:
             points = self.waypoints[self.target_index : self.target_index + 5, :2]
@@ -96,12 +103,18 @@ class StanleyPlanner(Controller):
 
     def calc_theta_and_ef(self, vehicle_state, waypoints):
         """
-        Calculate the heading and cross-track errors
-        Args:
-            vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
-            waypoints (numpy.ndarray [N, 4]): waypoints to track [x, y, velocity, heading]
-        """
+        Calculate the heading error and cross-track error relative to the path.
 
+        Args:
+            vehicle_state (numpy.ndarray [4,]): the state of the vehicle as [x, y, heading, velocity].
+            waypoints (numpy.ndarray [N, 4]): the waypoints, where each row is [x, y, velocity, heading].
+
+        Returns:
+            theta_e (float): the heading error between the vehicle and the target waypoint.
+            ef (numpy.ndarray): the cross-track error (signed distance) from the path.
+            target_index (int): index of the closest waypoint.
+            goal_veloctiy (float): target velocity at the closest waypoint.
+        """
         # distance to the closest point to the front axle center
         fx = vehicle_state[0] + self.params.WHEELBASE * math.cos(vehicle_state[2])
         fy = vehicle_state[1] + self.params.WHEELBASE * math.sin(vehicle_state[2])
@@ -111,7 +124,7 @@ class StanleyPlanner(Controller):
         )
         vec_dist_nearest_point = position_front_axle - self.target_point
 
-        # crosstrack error
+        # compute cross-track error using the vehicle's orientation
         front_axle_vec_rot_90 = np.array(
             [
                 [math.cos(vehicle_state[2] - math.pi / 2.0)],
@@ -120,40 +133,32 @@ class StanleyPlanner(Controller):
         )
         ef = np.dot(vec_dist_nearest_point.T, front_axle_vec_rot_90)
 
-        # heading error
-        # NOTE: If your raceline is based on a different coordinate system you need to -+ pi/2 = 90 degrees
+        # compute heading error (accounting for coordinate system differences)
         theta_raceline = waypoints[self.target_index, 3]
         theta_e = pi_2_pi(theta_raceline - vehicle_state[2])
 
-        # target velocity
+        # target velocity at the current waypoint
         goal_veloctiy = waypoints[self.target_index, 2]
 
         return theta_e, ef, self.target_index, goal_veloctiy
 
     def controller(self, vehicle_state, waypoints, k_path):
         """
-        Front Wheel Feedback Controller to track the path
-        Based on the heading error theta_e and the crosstrack error ef we calculate the steering angle
-        Returns the optimal steering angle delta is P-Controller with the proportional gain k
-
+        Compute the steering angle using the Stanley control algorithm.
+        
         Args:
-            vehicle_state (numpy.ndarray [4, ]): [x, y, heading, velocity] of the vehicle
-            waypoints (numpy.ndarray [N, 4]): waypoints to track
-            k_path (float): proportional gain
+            vehicle_state (numpy.ndarray [4,]): the vehicle state [x, y, heading, velocity].
+            waypoints (numpy.ndarray [N, 4]): the waypoints [x, y, velocity, heading].
+            k_path (float): proportional gain for cross-track error compensation.
 
         Returns:
-            theta_e (float): heading error
-            ef (numpy.ndarray [2, ]): crosstrack error
-            theta_raceline (float): target heading
-            kappa_ref (float): target curvature
-            goal_veloctiy (float): target velocity
+            delta (float): computed steering angle.
+            goal_veloctiy (float): target velocity corresponding to the closest waypoint.
         """
-
         theta_e, ef, target_index, goal_veloctiy = self.calc_theta_and_ef(
             vehicle_state, waypoints
         )
-
-        # Calculate final steering angle/ control input in [rad]: Steering Angle based on error + heading error
+        # compute the steering contribution from the cross-track error
         cte_front = math.atan2(k_path * ef, vehicle_state[3])
         delta = cte_front + theta_e
 
@@ -161,28 +166,33 @@ class StanleyPlanner(Controller):
 
     def plan(self, pose_x, pose_y, pose_theta, velocity, k_path=5.0, waypoints=None):
         """
-        Plan function
+        Compute the control commands for the vehicle's trajectory tracking.
 
         Args:
-            pose_x (float):
-            pose_y (float):
-            pose_theta (float):
-            velocity (float):
-            k_path (float, optional, default=5):
-            waypoints (numpy.ndarray [N x 4], optional, default=None):
+            pose_x (float): x-coordinate of the vehicle's pose.
+            pose_y (float): y-coordinate of the vehicle's pose.
+            pose_theta (float): heading angle (in radians) of the vehicle.
+            velocity (float): current velocity of the vehicle.
+            k_path (float, optional): proportional gain for path tracking (default is 5.0).
+            waypoints (numpy.ndarray [N, 4], optional): waypoints to track with columns [x, y, velocity, heading].
+                If provided, the internal waypoint list is updated.
 
         Returns:
-            steering_angle (float): desired steering angle
-            speed (float): desired speed
+            steering_angle (float): the calculated steering angle for control.
+            speed (float): the desired speed corresponding to the selected waypoint.
+        
+        Raises:
+            ValueError: if waypoints are not provided either at instantiation or during planning,
+                        or if given waypoints do not have at least 4 columns.
         """
         if waypoints is not None:
             if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
-                raise ValueError("Waypoints needs to be a (Nxm), m >= 4, numpy array!")
+                raise ValueError("Waypoints need to be a (N x m) numpy array with m >= 4!")
             self.waypoints = waypoints
         else:
             if self.waypoints is None:
                 raise ValueError(
-                    "Please set waypoints to track during planner instantiation or when calling plan()"
+                    "Please provide waypoints during planner instantiation or when calling plan()"
                 )
         k_path = np.float32(k_path)
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])

@@ -28,6 +28,9 @@ Author: Hongrui Zheng, Johannes Betz, Atsushi Sakai
 Last Modified: 5/5/22
 """
 
+from f1tenth_gym.envs.track import Track
+from f1tenth_planning.control.config.dynamics_config import dynamics_config
+from f1tenth_planning.control.controller import Controller
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
 from f1tenth_planning.utils.utils import solve_lqr
@@ -37,7 +40,7 @@ import numpy as np
 import math
 
 
-class LQRPlanner:
+class LQRPlanner(Controller):
     """
     Lateral Controller using LQR
 
@@ -52,21 +55,24 @@ class LQRPlanner:
         vehicle_control_theta_e (float): yaw error to ref trajectory
     """
 
-    def __init__(self, wheelbase=0.33, waypoints=None):
-        self.wheelbase = 0.33
-        self.waypoints = waypoints
+    def __init__(self, track: Track, params: dynamics_config = dynamics_config()):
+        super(LQRPlanner, self).__init__(track, params)
+        self.waypoints = np.vstack([
+            track.raceline.xs,
+            track.raceline.ys,
+            track.raceline.vxs,
+            track.raceline.yaws,
+            track.raceline.ks
+        ]).T
+
         self.vehicle_control_e_cog = 0  # e_cg: lateral error of CoG to ref trajectory
         self.vehicle_control_theta_e = 0  # theta_e: yaw error to ref trajectory
-        self.drawn_waypoints = []
+
         self.closest_point = None
         self.target_index = None
 
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        points = self.waypoints[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+        self.closest_point_renderer = None
+        self.local_plan_render = None
 
     def render_closest_point(self, e):
         """
@@ -74,7 +80,13 @@ class LQRPlanner:
         """
         if self.closest_point is not None:
             points = self.closest_point[:2][None]  # shape (1, 2)
-            e.render_points(points, color=(0, 0, 128), size=2)
+            if self.closest_point_renderer is None:
+                self.closest_point_renderer = e.render_points(
+                    points, color=(128, 0, 0), size=4
+                )
+            else:
+                self.closest_point_renderer.setData(points)
+
 
     def render_local_plan(self, e):
         """
@@ -82,7 +94,12 @@ class LQRPlanner:
         """
         if self.target_index is not None:
             points = self.waypoints[self.target_index : self.target_index + 10, :2]
-            e.render_lines(points, color=(0, 128, 0), size=2)
+            if self.local_plan_render is None:
+                self.local_plan_render = e.render_closed_lines(
+                    points, color=(0, 0, 128), size=1
+                )
+            else:
+                self.local_plan_render.setData(points)
 
     def calc_control_points(self, vehicle_state, waypoints):
         """
@@ -100,8 +117,8 @@ class LQRPlanner:
         """
 
         # distance to the closest point to the front axle center
-        fx = vehicle_state[0] + self.wheelbase * math.cos(vehicle_state[2])
-        fy = vehicle_state[1] + self.wheelbase * math.sin(vehicle_state[2])
+        fx = vehicle_state[0] + self.params.WHEELBASE * math.cos(vehicle_state[2])
+        fy = vehicle_state[1] + self.params.WHEELBASE * math.sin(vehicle_state[2])
         position_front_axle = np.array([fx, fy])
         self.closest_point, nearest_dist, t, self.target_index = nearest_point(
             position_front_axle, self.waypoints[:, 0:2]
@@ -168,7 +185,7 @@ class LQRPlanner:
 
         # Update the calculation matrix based on the current vehicle state
         matrix_ad_, matrix_bd_ = update_matrix(
-            vehicle_state, state_size, ts, self.wheelbase
+            vehicle_state, state_size, ts, self.params.WHEELBASE
         )
 
         matrix_state_ = np.zeros((state_size, 1))
@@ -187,7 +204,7 @@ class LQRPlanner:
         steer_angle_feedback = (matrix_k_ @ matrix_state_)[0][0]
 
         # Compute feed forward control term to decrease the steady error.
-        steer_angle_feedforward = k_ref * self.wheelbase
+        steer_angle_feedforward = k_ref * self.params.WHEELBASE
 
         # Calculate final steering angle in [rad]
         steer_angle = steer_angle_feedback + steer_angle_feedforward

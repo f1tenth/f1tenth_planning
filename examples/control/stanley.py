@@ -17,24 +17,24 @@ def main():
         config={
             "map": "Spielberg",
             "num_agents": 1,
-            "control_input": "speed",
+            "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": "kinematic_state"},
         },
         render_mode="human",
     )
     planner = StanleyPlanner(track=env.unwrapped.track)
 
-    env.add_render_callback(planner.render_waypoints)
-    env.add_render_callback(planner.render_local_plan)
-    env.add_render_callback(planner.render_target_point)
+    env.unwrapped.add_render_callback(planner.render_waypoints)
+    env.unwrapped.add_render_callback(planner.render_local_plan)
+    env.unwrapped.add_render_callback(planner.render_target_point)
 
     # reset environment
     poses = np.array(
         [
             [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
             ]
         ]
     )

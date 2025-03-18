@@ -19,7 +19,7 @@ def main():
         config={
             "map": "Spielberg",
             "num_agents": 1,
-            "control_input": "speed",
+            "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": "kinematic_state"},
         },
         render_mode="human",
@@ -28,9 +28,9 @@ def main():
     # create planner
     planner = PurePursuitPlanner(track=env.unwrapped.track)
 
-    env.add_render_callback(planner.render_waypoints)
-    env.add_render_callback(planner.render_local_plan)
-    env.add_render_callback(planner.render_lookahead_point)
+    env.unwrapped.add_render_callback(planner.render_waypoints)
+    env.unwrapped.add_render_callback(planner.render_local_plan)
+    env.unwrapped.add_render_callback(planner.render_lookahead_point)
 
     # reset environment
     track = env.unwrapped.track

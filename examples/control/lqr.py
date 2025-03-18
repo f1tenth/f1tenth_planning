@@ -30,6 +30,9 @@ Last Modified: 5/5/22
 import numpy as np
 import gymnasium as gym
 import f1tenth_gym
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from f1tenth_planning.control.lqr.lqr import LQRPlanner
 
 
@@ -45,30 +48,26 @@ def main():
         config={
             "map": "Spielberg",
             "num_agents": 1,
-            "control_input": "speed",
+            "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": "kinematic_state"},
         },
         render_mode="human",
     )
 
     # create planner
-    raceline = env.unwrapped.track.raceline
-    waypoints = np.stack(
-        [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws, raceline.ks], axis=1
-    )
-    planner = LQRPlanner(waypoints=waypoints)
+    planner = LQRPlanner(env.unwrapped.track)
 
-    env.add_render_callback(planner.render_waypoints)
-    env.add_render_callback(planner.render_local_plan)
-    env.add_render_callback(planner.render_closest_point)
+    env.unwrapped.add_render_callback(planner.render_waypoints)
+    env.unwrapped.add_render_callback(planner.render_local_plan)
+    env.unwrapped.add_render_callback(planner.render_closest_point)
 
     # reset environment
     poses = np.array(
         [
             [
-                env.track.raceline.xs[0],
-                env.track.raceline.ys[0],
-                env.track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
             ]
         ]
     )
