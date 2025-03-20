@@ -33,7 +33,7 @@ import f1tenth_gym
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from f1tenth_planning.control.lqr.lqr import LQRPlanner
+from f1tenth_planning.control import LQRController
 
 
 def main():
@@ -54,8 +54,8 @@ def main():
         render_mode="human",
     )
 
-    # create planner
-    planner = LQRPlanner(env.unwrapped.track)
+    # create controller
+    planner = LQRController(env.unwrapped.track)
 
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)

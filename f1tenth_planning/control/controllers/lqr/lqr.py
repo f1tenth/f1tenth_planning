@@ -40,7 +40,7 @@ import numpy as np
 import math
 
 
-class LQRPlanner(Controller):
+class LQRController(Controller):
     """
     Lateral Controller using LQR
 
@@ -56,7 +56,7 @@ class LQRPlanner(Controller):
     """
 
     def __init__(self, track: Track, params: dynamics_config = dynamics_config()):
-        super(LQRPlanner, self).__init__(track, params)
+        super(LQRController, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
             track.raceline.ys,
@@ -256,7 +256,7 @@ class LQRPlanner(Controller):
         else:
             if self.waypoints is None:
                 raise ValueError(
-                    "Please set waypoints to track during planner instantiation or when calling plan()"
+                    "Please set waypoints to track during controller instantiation or when calling plan()"
                 )
 
         # Define LQR Matrix and Parameter

@@ -1,7 +1,7 @@
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from f1tenth_planning.control.stanley.stanley import StanleyPlanner
+from f1tenth_planning.control import StanleyController
 import numpy as np
 import gymnasium as gym
 
@@ -22,7 +22,8 @@ def main():
         },
         render_mode="human",
     )
-    planner = StanleyPlanner(track=env.unwrapped.track)
+    # create controller
+    planner = StanleyController(track=env.unwrapped.track)
 
     env.unwrapped.add_render_callback(planner.render_waypoints)
     env.unwrapped.add_render_callback(planner.render_local_plan)
