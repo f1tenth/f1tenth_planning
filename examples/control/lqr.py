@@ -79,10 +79,7 @@ def main():
     laptime = 0.0
     while not done:
         steer, speed = planner.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            obs["agent_0"]["linear_vel_x"],
+            obs["agent_0"],
         )
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])

@@ -47,10 +47,7 @@ def main():
     laptime = 0.0
     while not done:
         steer, speed = planner.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            obs["agent_0"]["linear_vel_x"],
+            obs["agent_0"],
             k_path=7.0,
         )
         speed = 0.7 * speed

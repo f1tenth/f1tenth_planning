@@ -78,8 +78,8 @@ class lqr_config:
     dt: float = None
 
     def __post_init__(self):
-        self.Q = np.diag([1.0, 0.95, 0.0066, 0.0257])
-        self.R = np.array([[0.0062]])
+        self.Q = np.diag([0.999, 0.0, 0.0066, 0.0])
+        self.R = np.array([[0.75]])
         self.max_iterations = 50
         self.eps = 0.01
         self.dt = 0.01
