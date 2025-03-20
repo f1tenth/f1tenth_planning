@@ -144,7 +144,7 @@ class PurePursuitPlanner(Controller):
         else:
             return None
 
-    def plan(self, state, waypoints=None, lookahead_distance=None):
+    def plan(self, state:dict, waypoints=None, lookahead_distance=None):
         """
         Computes the steering angle and speed command based on the current state of the vehicle
         and the target waypoint found using the lookahead method.

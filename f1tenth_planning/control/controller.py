@@ -21,12 +21,14 @@ class Controller(ABC):
         self.waypoint_render = None
 
     @abstractmethod
-    def plan(self, state: dict) -> np.ndarray:
+    def plan(self, state: dict, waypoints: np.ndarray = None, **kwargs) -> np.ndarray:
         """
         Plan control action given a state observation from the environment.
 
         Args:
             state (dict): observation as returned from the environment.
+            waypoints (np.ndarray, optional): waypoints to track, overrides internal waypoints if provided.
+            **kwargs: additional arguments for the controller. This can be used to update controller parameters.
 
         Returns:
             np.ndarray: control action as (steering_angle, speed)

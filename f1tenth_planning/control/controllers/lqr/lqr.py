@@ -215,7 +215,7 @@ class LQRController(Controller):
         return steer_angle, v_ref
 
     def plan(
-        self, state, waypoints=None, config : lqr_config = None
+        self, state:dict, waypoints=None, config : lqr_config = None
     ):
         """
         Compute lateral control command for vehicle tracking.

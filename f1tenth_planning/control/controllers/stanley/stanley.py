@@ -172,7 +172,7 @@ class StanleyController(Controller):
 
         return delta, goal_veloctiy
 
-    def plan(self, state, waypoints=None, k_path=None):
+    def plan(self, state:dict, waypoints=None, k_path=None):
         """
         Compute the control commands for trajectory tracking of the vehicle.
 
