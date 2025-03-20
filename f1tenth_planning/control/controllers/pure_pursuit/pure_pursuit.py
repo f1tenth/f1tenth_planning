@@ -32,7 +32,7 @@ from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_actuation
 from f1tenth_planning.control.controller import Controller
-from f1tenth_planning.control.config.dynamics_config import dynamics_config
+from f1tenth_planning.control.config.dynamics_config import dynamics_config, f1tenth_params
 
 import numpy as np
 import warnings
@@ -57,7 +57,7 @@ class PurePursuitPlanner(Controller):
         target_index (int or None): Index of the current waypoint.
     """
 
-    def __init__(self, track: Track, params: dynamics_config = dynamics_config(), max_reacquire=20.0):
+    def __init__(self, track: Track, params: dynamics_config = f1tenth_params(), max_reacquire=20.0):
         super(PurePursuitPlanner, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,

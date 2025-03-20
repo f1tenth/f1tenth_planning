@@ -29,7 +29,7 @@ Last Modified: 5/5/22
 """
 
 from f1tenth_gym.envs.track import Track
-from f1tenth_planning.control.config.dynamics_config import dynamics_config
+from f1tenth_planning.control.config.dynamics_config import dynamics_config, f1tenth_params
 from f1tenth_planning.control.controller import Controller
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
@@ -55,7 +55,7 @@ class LQRController(Controller):
         vehicle_control_theta_e (float): yaw error to ref trajectory
     """
 
-    def __init__(self, track: Track, params: dynamics_config = dynamics_config()):
+    def __init__(self, track: Track, params: dynamics_config = f1tenth_params()):
         super(LQRController, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
