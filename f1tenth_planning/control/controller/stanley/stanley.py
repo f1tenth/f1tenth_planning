@@ -37,9 +37,9 @@ import numpy as np
 import math
 
 
-class StanleyPlanner(Controller):
+class StanleyController(Controller):
     """
-    Stanley Planner implements the front wheel feedback controller for path tracking.
+    Stanley Controller implements the front wheel feedback controller for path tracking.
     
     References:
       - Stanley: The robot that won the DARPA grand challenge:
@@ -56,7 +56,7 @@ class StanleyPlanner(Controller):
     """
 
     def __init__(self, track: Track, params: dynamics_config = dynamics_config()):
-        super(StanleyPlanner, self).__init__(track, params)
+        super(StanleyController, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
             track.raceline.ys,
@@ -192,7 +192,7 @@ class StanleyPlanner(Controller):
         else:
             if self.waypoints is None:
                 raise ValueError(
-                    "Please provide waypoints during planner instantiation or when calling plan()"
+                    "Please provide waypoints during controller instantiation or when calling plan()"
                 )
         k_path = np.float32(k_path)
         vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
