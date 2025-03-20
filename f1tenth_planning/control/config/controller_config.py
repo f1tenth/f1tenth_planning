@@ -29,7 +29,7 @@ class mpc_config:
     n_ind_search: int
     dl: float
     dt: float
-    
+  
 def kinematic_mpc_config():
     return mpc_config(
         nx=4,
@@ -58,3 +58,28 @@ def dynamic_mpc_config():
         dl=0.03
     )
 
+
+@dataclass
+class lqr_config:
+    """
+    Configuration for the LQR controller. Includes the following parameters:
+
+    Args:
+        Q (np.ndarray): State cost matrix.
+        R (np.ndarray): Control input cost matrix."
+        max_iterations (int): Maximum number of iterations for the LQR solver.
+        eps (float): Tolerance for convergence.
+        dt (float): Time discretization interval.
+    """
+    Q: np.ndarray = field(default=None)
+    R: np.ndarray = field(default=None)
+    max_iterations: int = None
+    eps: float = None
+    dt: float = None
+
+    def __post_init__(self):
+        self.Q = np.diag([1.0, 0.95, 0.0066, 0.0257])
+        self.R = np.array([[0.0062]])
+        self.max_iterations = 50
+        self.eps = 0.01
+        self.dt = 0.01

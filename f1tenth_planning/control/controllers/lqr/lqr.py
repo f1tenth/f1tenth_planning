@@ -31,6 +31,7 @@ Last Modified: 5/5/22
 from f1tenth_gym.envs.track import Track
 from f1tenth_planning.control.config.dynamics_config import dynamics_config, f1tenth_params
 from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.config.controller_config import lqr_config
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
 from f1tenth_planning.utils.utils import solve_lqr
@@ -54,8 +55,11 @@ class LQRController(Controller):
         vehicle_control_e_cog (float): lateral error of cog to ref trajectory
         vehicle_control_theta_e (float): yaw error to ref trajectory
     """
-
-    def __init__(self, track: Track, params: dynamics_config = f1tenth_params()):
+    def __init__(self, 
+                 track: Track, 
+                 params: dynamics_config = f1tenth_params(), 
+                 config: lqr_config = lqr_config(),
+                 ):
         super(LQRController, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
@@ -65,6 +69,7 @@ class LQRController(Controller):
             track.raceline.ks
         ]).T
 
+        self.config = config
         self.vehicle_control_e_cog = 0  # e_cg: lateral error of CoG to ref trajectory
         self.vehicle_control_theta_e = 0  # theta_e: yaw error to ref trajectory
 
@@ -189,11 +194,9 @@ class LQRController(Controller):
         )
 
         matrix_state_ = np.zeros((state_size, 1))
-        matrix_r_ = np.diag(matrix_r)
-        matrix_q_ = np.diag(matrix_q)
 
         matrix_k_ = solve_lqr(
-            matrix_ad_, matrix_bd_, matrix_q_, matrix_r_, eps, max_iteration
+            matrix_ad_, matrix_bd_, matrix_q, matrix_r, eps, max_iteration
         )
 
         matrix_state_[0][0] = e_cg
@@ -212,42 +215,25 @@ class LQRController(Controller):
         return steer_angle, v_ref
 
     def plan(
-        self,
-        pose_x,
-        pose_y,
-        pose_theta,
-        velocity,
-        timestep=0.01,
-        matrix_q_1=0.999,
-        matrix_q_2=0.0,
-        matrix_q_3=0.0066,
-        matrix_q_4=0.0,
-        matrix_r=0.75,
-        iterations=50,
-        eps=0.001,
-        waypoints=None,
+        self, state, waypoints=None, config : lqr_config = None
     ):
         """
-        Compute lateral control command.
+        Compute lateral control command for vehicle tracking.
 
         Args:
-            pose_x (float):
-            pose_y (float):
-            pose_theta (float):
-            velocity (float):
-            timestep (float, optional, default=0.01):
-            matrix_q_1 (float, optional, default=1.0):
-            matrix_q_2 (float, optional, default=0.95):
-            matrix_q_3 (float, optional, default=0.0066):
-            matrix_q_4 (float, optional, default=0.0257):
-            matrix_r (float, optional, default=0.0062):
-            iterations (int, optional, default=50):
-            eps (float, optional, default=0.01):
-            waypoints (numpy.ndarray [N x 5], optional, default=None):
+            state (dict): Current vehicle state with keys:
+            - "pose_x" (float): x-position of the vehicle.
+            - "pose_y" (float): y-position of the vehicle.
+            - "pose_theta" (float): heading (in radians) of the vehicle.
+            - "linear_vel_x" (float): linear velocity of the vehicle.
+            waypoints (numpy.ndarray [N x 5], optional): Array of waypoints to track, where each row is
+            [x, y, velocity, heading, curvature]. If not none, this overrides the waypoints set during controller instantiation.
+            config (lqr_config, optional): Configuration parameters for the LQR controller. If not N
 
         Returns:
-            steering_angle (float): desired steering angle
-            speed (float): desired speed
+            tuple:
+            steering_angle (float): Desired steering angle in radians.
+            speed (float): Target speed.
         """
         if waypoints is not None:
             if waypoints.shape[1] < 5 or len(waypoints.shape) != 2:
@@ -259,16 +245,26 @@ class LQRController(Controller):
                     "Please set waypoints to track during controller instantiation or when calling plan()"
                 )
 
-        # Define LQR Matrix and Parameter
-        matrix_q = [matrix_q_1, matrix_q_2, matrix_q_3, matrix_q_4]
-        matrix_r = [matrix_r]
+        if config is not None:
+            self.config = config
 
         # Define a numpy array that includes the current vehicle state: x,y, theta, veloctiy
-        vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
+        vehicle_state = np.array([
+            state["pose_x"],
+            state["pose_y"],
+            state["pose_theta"],
+            state["linear_vel_x"]
+        ])
 
         # Calculate the steering angle and the speed in the controller
         steering_angle, speed = self.controller(
-            vehicle_state, self.waypoints, timestep, matrix_q, matrix_r, iterations, eps
+            vehicle_state, 
+            self.waypoints, 
+            self.config.dt, 
+            self.config.Q,
+            self.config.R, 
+            self.config.max_iterations, 
+            self.config.eps
         )
 
         return steering_angle, speed

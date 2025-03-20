@@ -50,6 +50,7 @@ class PurePursuitPlanner(Controller):
         track (Track): Track instance containing the raceline information.
         params (dynamics_config, optional): Vehicle dynamic parameters. Defaults to dynamics_config().
         max_reacquire (float, optional): Maximum radius (in meters) to reacquire the current waypoint in case the vehicle drifts. Defaults to 20.0.
+        default_lookahead (float, optional): Default lookahead distance (in meters) to use if not provided during planning. Defaults to 0.8.
 
     Attributes:
         waypoints (numpy.ndarray [N x 4]): Static list of waypoints to track; columns correspond to [x, y, velocity, heading].
@@ -57,7 +58,7 @@ class PurePursuitPlanner(Controller):
         target_index (int or None): Index of the current waypoint.
     """
 
-    def __init__(self, track: Track, params: dynamics_config = f1tenth_params(), max_reacquire=20.0):
+    def __init__(self, track: Track, params: dynamics_config = f1tenth_params(), lookahead_distance=0.8, max_reacquire=20.0):
         super(PurePursuitPlanner, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
@@ -65,7 +66,8 @@ class PurePursuitPlanner(Controller):
             track.raceline.vxs,
             track.raceline.yaws
         ]).T
-        
+
+        self.lookahead_distance = lookahead_distance
         self.max_reacquire = max_reacquire
         self.lookahead_point = None
         self.target_index = None
@@ -142,21 +144,23 @@ class PurePursuitPlanner(Controller):
         else:
             return None
 
-    def plan(self, pose_x, pose_y, pose_theta, lookahead_distance, waypoints=None):
+    def plan(self, state, waypoints=None, lookahead_distance=None):
         """
-        Computes the steering angle and speed command based on the current vehicle state
-        and the next waypoint derived from the lookahead circle.
+        Computes the steering angle and speed command based on the current state of the vehicle
+        and the target waypoint found using the lookahead method.
+
+        This function uses either dynamic waypoints provided at call-time or, if absent,
+        the static raceline defined during planner instantiation. It determines the appropriate
+        waypoint based on the given lookahead distance and calculates the required actuation commands.
 
         Args:
-            pose_x (float): Current x-position of the vehicle.
-            pose_y (float): Current y-position of the vehicle.
-            pose_theta (float): Current heading of the vehicle in radians.
-            lookahead_distance (float): Distance ahead of the vehicle to determine the target waypoint.
-            waypoints (numpy.ndarray [N x 4], optional): Optional dynamic waypoints to use instead of the static raceline.
-                Each waypoint should have columns [x, y, velocity, heading].
+            state (dict): Dictionary containing the vehicle's state with keys 'pose_x', 'pose_y', and 'pose_theta'.
+            waypoints (numpy.ndarray [N x 4], optional): An array of dynamic waypoints, where each waypoint has
+            the format [x, y, velocity, heading]. Overrides the static raceline if provided.
+            lookahead_distance (float): The lookahead distance to use for computing the target waypoint. Overrides the default if provided.
 
         Returns:
-            tuple: (steering_angle (float), speed (float)) commands for the vehicle.
+            control: A tuple (steering_angle, speed) representing the computed steering command and speed.
             If no valid lookahead point is found, returns (0.0, 0.0) after issuing a warning.
         """
         if waypoints is not None:
@@ -168,8 +172,15 @@ class PurePursuitPlanner(Controller):
                 raise ValueError(
                     "Please set waypoints to track during planner instantiation or when calling plan()"
                 )
+        if lookahead_distance is not None:
+            self.default_lookahead = lookahead_distance
+
+        pose_x = state["pose_x"]
+        pose_y = state["pose_y"]
+        pose_theta = state["pose_theta"]
+
         position = np.array([pose_x, pose_y])
-        lookahead_distance = np.float32(lookahead_distance)
+        lookahead_distance = np.float32(self.lookahead_distance)
         self.lookahead_point = self._get_current_waypoint(
             lookahead_distance, position, pose_theta
         )

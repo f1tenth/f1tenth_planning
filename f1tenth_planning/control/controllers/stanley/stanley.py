@@ -39,23 +39,30 @@ import math
 
 class StanleyController(Controller):
     """
-    Stanley Controller implements the front wheel feedback controller for path tracking.
-    
+    Stanley Controller implements a front wheel feedback controller for vehicle path tracking.
+
+    This controller computes steering commands using the Stanley method, which combines
+    the vehicle's heading error with the cross-track error relative to a reference path.
+    It is suited for autonomous vehicles and employs a proportional gain to minimize tracking error.
+
     References:
-      - Stanley: The robot that won the DARPA grand challenge:
-        http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
+      - Stanley: The Robot That Won the DARPA Grand Challenge:
+          http://isl.ecst.csuchico.edu/DOCS/darpa2005/DARPA%202005%20Stanley.pdf
       - Autonomous Automobile Path Tracking:
-        https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
+          https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_Methods_for_Autonomous_Automobile_Path_Tracking.pdf
 
     Args:
-        track (Track): the racetrack instance containing the raceline information.
-        params (dynamics_config, optional): the vehicle dynamics configuration.
-    
+        track (Track): Racetrack instance containing raceline and waypoint information.
+        params (dynamics_config, optional): Vehicle dynamics configuration parameters (default: f1tenth_params()).
+
     Attributes:
-        waypoints (numpy.ndarray [N, 4]): waypoints to track, with columns [x, y, velocity, heading].
+        waypoints (numpy.ndarray [N x 4]): Static list of waypoints to track; columns correspond to [x, y, velocity, heading].
+        k_path (float): Proportional gain for cross-track error compensation.
+        target_point (numpy.ndarray or None): The current target point on the track.
+        target_index (int or None): Index of the current waypoint.
     """
 
-    def __init__(self, track: Track, params: dynamics_config = f1tenth_params()):
+    def __init__(self, track: Track, params: dynamics_config = f1tenth_params(), k_path=5.0):
         super(StanleyController, self).__init__(track, params)
         self.waypoints = np.vstack([
             track.raceline.xs,
@@ -63,6 +70,7 @@ class StanleyController(Controller):
             track.raceline.vxs,
             track.raceline.yaws
         ]).T
+        self.k_path = k_path
         
         self.target_point_renderer = None
         self.local_plan_render = None
@@ -164,26 +172,28 @@ class StanleyController(Controller):
 
         return delta, goal_veloctiy
 
-    def plan(self, pose_x, pose_y, pose_theta, velocity, k_path=5.0, waypoints=None):
+    def plan(self, state, waypoints=None, k_path=None):
         """
-        Compute the control commands for the vehicle's trajectory tracking.
+        Compute the control commands for trajectory tracking of the vehicle.
 
         Args:
-            pose_x (float): x-coordinate of the vehicle's pose.
-            pose_y (float): y-coordinate of the vehicle's pose.
-            pose_theta (float): heading angle (in radians) of the vehicle.
-            velocity (float): current velocity of the vehicle.
-            k_path (float, optional): proportional gain for path tracking (default is 5.0).
-            waypoints (numpy.ndarray [N, 4], optional): waypoints to track with columns [x, y, velocity, heading].
-                If provided, the internal waypoint list is updated.
+            state (dict): Dictionary containing the vehicle's state with the following keys:
+            - "pose_x" (float): x-coordinate of the vehicle's position.
+            - "pose_y" (float): y-coordinate of the vehicle's position.
+            - "pose_theta" (float): heading angle (in radians) of the vehicle.
+            - "linear_vel_x" (float): current forward velocity of the vehicle.
+            k_path (float, optional): Proportional gain for path tracking. If provided, it updates the controller's gain.
+            waypoints (numpy.ndarray [N, 4], optional): Array of waypoints with shape (N, 4), where each waypoint
+            is defined by [x, y, velocity, heading]. When provided, the controller's internal waypoint list is updated.
 
         Returns:
-            steering_angle (float): the calculated steering angle for control.
-            speed (float): the desired speed corresponding to the selected waypoint.
-        
+            tuple: A tuple containing:
+            - steering_angle (float): The calculated steering angle command.
+            - speed (float): The desired speed corresponding to the closest waypoint.
+
         Raises:
-            ValueError: if waypoints are not provided either at instantiation or during planning,
-                        or if given waypoints do not have at least 4 columns.
+            ValueError: If neither internal waypoints exist nor are provided as an argument, or if the provided
+                waypoints do not have at least 4 columns.
         """
         if waypoints is not None:
             if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
@@ -194,7 +204,17 @@ class StanleyController(Controller):
                 raise ValueError(
                     "Please provide waypoints during controller instantiation or when calling plan()"
                 )
+            
+        if k_path is not None:
+            self.k_path = k_path
+
         k_path = np.float32(k_path)
-        vehicle_state = np.array([pose_x, pose_y, pose_theta, velocity])
+        vehicle_state = np.array([
+            state["pose_x"], 
+            state["pose_y"], 
+            state["pose_theta"], 
+            state["linear_vel_x"]
+        ])
+
         steering_angle, speed = self.controller(vehicle_state, self.waypoints, k_path)
         return steering_angle, speed
