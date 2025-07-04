@@ -146,7 +146,7 @@ class STMPCPlanner:
         update waypoints being drawn by EnvRenderer
         """
         points = np.array(self.waypoints).T[:, :2]
-        e.render_closed_lines(points, color=(128, 0, 0), size=1)
+        e.get_lines_renderer(points, color=(128, 0, 0), size=1)
 
     def render_local_plan(self, e):
         """

@@ -104,11 +104,11 @@ class NMPCPlanner:
         """
         points = np.array(self.waypoints).T[:, :2]
         if self.waypoint_render is None:
-            self.waypoint_render = e.render_closed_lines(
+            self.waypoint_render = e.get_lines_renderer(
                 points, color=(128, 0, 0), size=1
             )
         else:
-            self.waypoint_render.setData(points)
+            self.waypoint_render.update(points)
 
     def render_local_plan(self, e):
         """
@@ -127,7 +127,7 @@ class NMPCPlanner:
             if self.mpc_render is None:
                 self.mpc_render = e.render_lines(points, color=(0, 0, 128), size=2)
             else:
-                self.mpc_render.setData(points)
+                self.mpc_render.update(points)
 
     def calc_ref_trajectory(self, state, cx, cy, cyaw, sp, ckap):
         """

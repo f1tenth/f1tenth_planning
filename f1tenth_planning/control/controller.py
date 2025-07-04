@@ -61,8 +61,8 @@ class Controller(ABC):
         if self.waypoints is not None:
             points = self.waypoints[:, :2]
             if self.waypoint_render is None:
-                self.waypoint_render = e.render_closed_lines(
+                self.waypoint_render = e.get_lines_renderer(
                     points, color=self.waypoints_color, size=1
                 )
             else:
-                self.waypoint_render.setData(points)
+                self.waypoint_render.update(points)

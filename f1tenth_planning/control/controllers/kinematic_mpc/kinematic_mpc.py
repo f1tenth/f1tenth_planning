@@ -54,11 +54,11 @@ class Kinematic_MPC_Planner(Controller):
         if self.x_pred is not None:
             self.control_solution = self.x_pred[:2].T
             if self.mpc_solution_render is None:
-                self.mpc_solution_render = e.render_points(
+                self.mpc_solution_render = e.get_points_renderer(
                     self.control_solution, color=(128, 0, 0), size=4
                 )
             else:
-                self.mpc_solution_render.setData(self.control_solution)
+                self.mpc_solution_render.update(self.control_solution)
 
     def render_local_plan(self, e):
         """
@@ -70,11 +70,11 @@ class Kinematic_MPC_Planner(Controller):
         if self.ref_traj is not None:
             self.local_plan = self.ref_traj[:2].T
             if self.local_plan_render is None:
-                self.local_plan_render = e.render_closed_lines(
+                self.local_plan_render = e.get_lines_renderer(
                     self.local_plan, color=(0, 0, 128), size=4
                 )
             else:
-                self.local_plan_render.setData(self.local_plan)
+                self.local_plan_render.update(self.local_plan)
 
     def plan(self, state:dict, waypoints=None, Q=None, R=None, Rd=None, P=None):
         """

@@ -152,11 +152,11 @@ class Dynamic_MPPI_Planner(Controller):
         """
         if self.x_pred is not None:
             if self.mpc_solution_render is None:
-                self.mpc_solution_render = e.render_points(
+                self.mpc_solution_render = e.get_points_renderer(
                     self.control_solution.T, color=(128, 0, 0), size=4
                 )
             else:
-                self.mpc_solution_render.setData(self.control_solution.T)
+                self.mpc_solution_render.update(self.control_solution.T)
 
     def render_local_plan(self, e):
         """
@@ -167,11 +167,11 @@ class Dynamic_MPPI_Planner(Controller):
         """
         if self.ref_traj is not None:
             if self.local_plan_render is None:
-                self.local_plan_render = e.render_closed_lines(
+                self.local_plan_render = e.get_lines_renderer(
                     self.local_plan, color=(0, 0, 128), size=4
                 )
             else:
-                self.local_plan_render.setData(self.local_plan)
+                self.local_plan_render.update(self.local_plan)
 
     def plan(self, state: dict, waypoints=None, params: dynamics_config = None, Q : np.ndarray = None, R: np.ndarray = None):
         """

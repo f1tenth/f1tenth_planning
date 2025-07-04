@@ -91,11 +91,11 @@ class LQRController(Controller):
         if self.closest_point is not None:
             self.control_solution = self.closest_point[:2][None]  # shape (1, 2)
             if self.control_solution_renderer is None:
-                self.control_solution_renderer = e.render_points(
+                self.control_solution_renderer = e.get_points_renderer(
                     self.control_solution, color=(128, 0, 0), size=4
                 )
             else:
-                self.control_solution_renderer.setData(self.control_solution)
+                self.control_solution_renderer.update(self.control_solution)
 
 
     def render_local_plan(self, e):
@@ -105,11 +105,11 @@ class LQRController(Controller):
         if self.target_index is not None:
             self.local_plan = self.waypoints[self.target_index : self.target_index + 10, :2]
             if self.local_plan_render is None:
-                self.local_plan_render = e.render_closed_lines(
+                self.local_plan_render = e.get_lines_renderer(
                     self.local_plan, color=(0, 0, 128), size=1
                 )
             else:
-                self.local_plan_render.setData(self.local_plan)
+                self.local_plan_render.update(self.local_plan)
 
     def calc_control_points(self, vehicle_state, waypoints):
         """
