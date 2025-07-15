@@ -22,12 +22,21 @@ class Nonlinear_MPC_Solver:
         ipopt_opts (dict, optional): options for the IPOPT solver
     """
 
-    def __init__(self, config: mpc_config, model: Dynamics_Model, ipopt_opts: dict) -> None:
+    def __init__(self, config: mpc_config, model: Dynamics_Model, ipopt_opts: dict,
+                 running_cost_fn=None, terminal_cost_fn=None) -> None:
         self.config = config
         self.model = model
         self.ipopt_opts = ipopt_opts
         self.discretizer = rk4_discretization
+        self.running_cost_fn = running_cost_fn if running_cost_fn else self._running_cost_fn
+        self.terminal_cost_fn = terminal_cost_fn if terminal_cost_fn else self._terminal_cost_fn
         self.init_problem()
+
+    def _running_cost_fn(self, st, ref, Q, R, con):
+        return (st - ref).T @ Q @ (st - ref) + con.T @ R @ con
+    
+    def _terminal_cost_fn(self, st, ref, Q):
+        return (st - ref).T @ Q @ (st - ref)
 
     def init_problem(self):
         
@@ -57,12 +66,11 @@ class Nonlinear_MPC_Solver:
             st = X[:, k]
             con = U[:, k]
             params = Params[self.config.nx:, k]
+            ref_state = Params[:self.config.nx, k]  # reference state at time k
 
             # state tracking cost + input cost
-            cost_fn = cost_fn \
-                + (st - Params[:self.config.nx, k]).T @ Q @ (st - Params[:self.config.nx, k]) \
-                + con.T @ R @ con    
-            
+            cost_fn += self.running_cost_fn(st, ref_state, Q, R, con)
+
             # state dynamics constraint
             st_next = X[:, k+1]
             st_next_RK4 = self.discretizer(f, st, con, params, self.config.dt)
@@ -70,9 +78,8 @@ class Nonlinear_MPC_Solver:
 
         # terminal cost
         st = X[:, self.config.N]
-        cost_fn = cost_fn \
-            + (st - Params[:self.config.nx, self.config.N]).T @ Q @ (st - Params[:self.config.nx, self.config.N])
-    
+        cost_fn += self.terminal_cost_fn(st, ref_state, Q)
+
         OPT_variables = ca.vertcat(
             X.reshape((-1, 1)),
             U.reshape((-1, 1))

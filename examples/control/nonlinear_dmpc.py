@@ -31,23 +31,12 @@ def main():
             "observation_config": {"type": "dynamic_state"},
             "params": F110Env.f1fifth_vehicle_params(),
         },
-        render_mode="human",
+        render_mode="unlimited",
     )
-
-    # Load track waypoints
-    waypoints_track: Track = Track.from_raceline_file(
-        os.path.join(os.path.dirname(__file__), "trajectory_log.csv"),
-        delimiter=";",
-        skip_rows=3,
-    )
-
-    # Multiply the velocity by a factor
-    waypoints_track.raceline.vxs *= 1.0
-    waypoints_track.raceline.vxs = np.where(waypoints_track.raceline.vxs < 1.0, 1.0, waypoints_track.raceline.vxs)  # Ensure min speed
 
     # create planner
-    planner = Nonlinear_Dynamic_MPC_Planner(track=waypoints_track, params=f1fifth_params())
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    planner = Nonlinear_Dynamic_MPC_Planner(track=env.unwrapped.track, params=f1fifth_params())
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 

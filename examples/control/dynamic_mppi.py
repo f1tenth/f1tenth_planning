@@ -29,21 +29,13 @@ def main():
             "observation_config": {"type": "dynamic_state"},
             "params": F110Env.f1fifth_vehicle_params(),
         },
-        render_mode="human",
+        render_mode="unlimited",
     )
-
-    # Load track waypoints
-    waypoints_track: Track = Track.from_raceline_file(
-        os.path.join(os.path.dirname(__file__), "trajectory_log.csv"),
-        delimiter=";",
-        skip_rows=3,
-    )
-
     # create planner
     config = dynamic_mppi_config()
-    config.Q = np.array([25.0, 25.0, 0.0, 1.0, 0.1, 0.0, 0.0])
-    planner = Nonlinear_Dynamic_MPPI_Planner(track=waypoints_track, params=f1fifth_params())
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    config.Q = np.diag([25.0, 25.0, 0.0, 1.0, 0.1, 0.0, 0.0])
+    planner = Nonlinear_Dynamic_MPPI_Planner(track=env.unwrapped.track, params=f1fifth_params(), config=config)
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 
@@ -51,9 +43,9 @@ def main():
     poses = np.array(
         [
             [
-                waypoints_track.raceline.xs[0],
-                waypoints_track.raceline.ys[0],
-                waypoints_track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
             ]
         ]
     )

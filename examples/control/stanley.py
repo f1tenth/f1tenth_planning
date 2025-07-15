@@ -12,17 +12,17 @@ def main():
     env = gym.make(
         "f1tenth_gym:f1tenth-v0",
         config={
-            "map": "Spielberg",
+            "map": "Spielberg_blank",
             "num_agents": 1,
             "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": "kinematic_state"},
         },
-        render_mode="human",
+        render_mode="unlimited",
     )
     # create controller
     planner = StanleyController(track=env.unwrapped.track)
 
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 

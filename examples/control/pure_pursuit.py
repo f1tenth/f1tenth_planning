@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import gymnasium as gym
 
@@ -27,36 +28,24 @@ def main():
             "num_agents": 1,
             "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": "kinematic_state"},
-            "params": F110Env.f1fifth_vehicle_params(),
         },
-        render_mode="human",
+        render_mode="unlimited",
     )
-    # Load track waypoints
-    waypoints_track: Track = Track.from_raceline_file(
-        os.path.join(os.path.dirname(__file__), "trajectory_log.csv"),
-        delimiter=";",
-        skip_rows=3,
-    )
-
-    # Multiply the velocity by a factor
-    waypoints_track.raceline.vxs *= 0.5
-
 
     # create controller
-    planner = PurePursuitPlanner(track=waypoints_track, params=f1fifth_params())
+    planner = PurePursuitPlanner(track=env.unwrapped.track)
 
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 
     # reset environment
-    track = waypoints_track
     poses = np.array(
         [
             [
-                track.raceline.xs[0],
-                track.raceline.ys[0],
-                track.raceline.yaws[0],
+                env.unwrapped.track.raceline.xs[0],
+                env.unwrapped.track.raceline.ys[0],
+                env.unwrapped.track.raceline.yaws[0],
             ]
         ]
     )
@@ -66,6 +55,7 @@ def main():
 
     # run simulation
     laptime = 0.0
+    start = time.time()
     while not done:
         steer, speed = planner.plan(
             obs["agent_0"],
@@ -74,10 +64,18 @@ def main():
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
+
+        print(
+            "speed: {}, steering angle: {}".format(
+                speed, steer
+            )
+        )
+
         done = terminated or truncated
         laptime += timestep
         env.render()
-    print("Sim elapsed time:", laptime)
+
+    print("Sim elapsed time:", laptime, "Real elapsed time:", time.time() - start)
 
 
 if __name__ == "__main__":

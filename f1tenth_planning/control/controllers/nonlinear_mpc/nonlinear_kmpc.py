@@ -3,6 +3,7 @@ NMPC waypoint tracker using CasADi. On init, takes in model equation.
 """
 
 import numpy as np
+import casadi as ca
 from f1tenth_gym.envs.track import Track
 from f1tenth_planning.utils.utils import calc_interpolated_reference_trajectory
 from f1tenth_planning.control.controller import Controller
@@ -61,8 +62,13 @@ class Kinematic_NMPC_Planner(Controller):
         )
         u_min = np.array([self.params.MIN_DSTEER, self.params.MIN_ACCEL])
         u_max = np.array([self.params.MAX_DSTEER, self.params.MAX_ACCEL])
+        
+        self.config.x_min = x_min
+        self.config.x_max = x_max
+        self.config.u_min = u_min
+        self.config.u_max = u_max
 
-        self.model = Kinematic_Bicycle_Model(self.track, self.params)
+        self.model = Kinematic_Bicycle_Model(self.params)
         ipopt_opts = {
             "ipopt": {
                 "print_level": 0,
@@ -83,6 +89,27 @@ class Kinematic_NMPC_Planner(Controller):
 
         self.mpc_solution_render = None
         self.local_plan_render = None
+
+    def __yaw_normalized_quadratic_error(self, st, ref, Q):
+        state_error = st - ref
+        all_but_yaw_mask = np.ones(self.config.nx, dtype=bool)
+        all_but_yaw_mask[4] = False  # yaw is the 5th state
+        cost = state_error[all_but_yaw_mask].T @ Q @ state_error[all_but_yaw_mask]
+        # Calculate the yaw-normalized error
+        yaw_error = ca.arctan2(ca.sin(state_error[4]), ca.cos(state_error[4]))
+        cost += yaw_error.T @ Q[4, 4] @ yaw_error
+        return cost
+        
+    def _terminal_cost_fn(self, st, ref, Q):
+        return self.__yaw_normalized_quadratic_error(st, ref, Q)
+
+    def _running_cost_fn(self, st, ref, Q, R, con):
+        # State tracking cost
+        cost = self.__yaw_normalized_quadratic_error(st, ref, Q)
+
+        # Control input cost
+        cost += con.T @ R @ con
+        return cost
 
     def render_control_solution(self, e):
         """
@@ -153,16 +180,20 @@ class Kinematic_NMPC_Planner(Controller):
 
         cx = self.waypoints[:, 0]
         cy = self.waypoints[:, 1]
-        v_max_prev = np.mean(self.x_pred[3, :]) if self.x_pred is not None else v
+        v_max_prev = np.max(self.waypoints[:, 3]) if self.waypoints is not None else v
         self.ref_traj = calc_interpolated_reference_trajectory(
             x, y, cx, cy, v_max_prev, self.config.dt, self.config.N, self.waypoints
         ).T.copy()
+        # Reference is in [0, 2pi] so convert to [-pi, pi]
+        self.ref_traj[4, :] = (self.ref_traj[4, :] + np.pi) % (2 * np.pi) - np.pi
 
-        self.ref_traj[-1][self.ref_traj[-1] - yaw > 4.5] = np.abs(
-            self.ref_traj[-1][self.ref_traj[-1] - yaw > 4.5] - (2 * np.pi)
-        )
-        self.ref_traj[-1][self.ref_traj[-1] - yaw < -4.5] = np.abs(
-            self.ref_traj[-1][self.ref_traj[-1] - yaw < -4.5] + (2 * np.pi)
+        # If the reference switches signs compared to current state (i.e jumps from -np.pi + eps to np+pi - eps),
+        # we need to adjust the reference yaw to match the current state yaw.
+        # This is to avoid large yaw errors that can cause the MPC to fail.
+        self.ref_traj[4, :] = np.where(
+            np.abs(self.ref_traj[4, :] - x0[4]) > np.pi,
+            self.ref_traj[4, :] + 2 * np.pi * np.sign(x0[4] - self.ref_traj[4, :]),
+            self.ref_traj[4, :],
         )
 
         opti_params = None

@@ -16,17 +16,17 @@ def main():
     env: F110Env = gym.make(
         "f1tenth_gym:f1tenth-v0",
         config={
-            "map": "Spielberg",
+            "map": "Spielberg_blank",
             "num_agents": 1,
             "control_input": "accl",
             "observation_config": {"type": "dynamic_state"},
         },
-        render_mode="human",
+        render_mode="unlimited",
     )
 
     # create planner
     planner = Kinematic_MPC_Planner(track=env.unwrapped.track)
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 

@@ -30,7 +30,7 @@ Last Modified: 5/5/22
 import numpy as np
 import gymnasium as gym
 import f1tenth_gym
-from f1tenth_gym.envs.f110_env import F110Env
+import time
 
 from f1tenth_planning.control import LQRController
 
@@ -47,30 +47,15 @@ def main():
         config={
             "map": "Spielberg",
             "num_agents": 1,
-            "timestep": 0.01,
-            "integrator_timestep": 0.01,
-            "integrator": "rk4",
             "control_input": ["speed", "steering_angle"],
-            "model": 'ks', # "ks", "st", "mb"
             "observation_config": {"type": "kinematic_state"},
-            "params": F110Env.f1tenth_vehicle_params(),
-            # "params": F110Env.fullscale_vehicle_params(),
-            "reset_config": {"type": "rl_random_static"},
-            "map_scale": 1.0,
-            "enable_rendering": 1,
-            "enable_scan": 0,
-            "lidar_num_beams": 270,
-            "compute_frenet": 0,
-            "max_laps": 5,  # 'inf' for infinite laps, or a positive integer
-            "steer_delay_buffer_size": 2,  # 0 for no delay, >0 for delay
         },
-        render_mode="unlimited", # "human", "human_fast", "unlimited"
+        render_mode="unlimited",
     )
 
     # create controller
     planner = LQRController(env.unwrapped.track)
-
-    env.unwrapped.add_render_callback(planner.render_waypoints)
+    planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
 
@@ -90,6 +75,7 @@ def main():
 
     # run simulation
     laptime = 0.0
+    start = time.time()
     while not done:
         steer, speed = planner.plan(
             obs["agent_0"],
@@ -97,10 +83,18 @@ def main():
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steer, speed]])
         )
+
+        print(
+            "speed: {}, steering angle: {}".format(
+                speed, steer
+            )
+        )
+
         done = terminated or truncated
         laptime += timestep
         env.render()
-    print("Sim elapsed time:", laptime)
+
+    print("Sim elapsed time:", laptime, "Real elapsed time:", time.time() - start)
 
 
 if __name__ == "__main__":
