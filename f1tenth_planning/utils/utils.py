@@ -107,16 +107,17 @@ def calc_ref_trajectory_indices(x, y, cx, cy, v, dt, N):
 
     return ind_list
 
-def calc_interpolated_reference_trajectory(x, y, cx, cy, v, dt, N, reference_trajectory):
+def calc_interpolated_reference_trajectory(x, y, yaw, cx, cy, cv, dt, N, reference_trajectory, yaw_idx=None):
     """
     Calculate the interpolated reference trajectory based on the current position and the reference trajectory waypoints.
 
     Args:
         x (float): current x position
         y (float): current y position
+        yaw (float): current yaw angle (-pi to pi)
         cx (numpy.ndarray): x positions of the reference trajectory waypoints
         cy (numpy.ndarray): y positions of the reference trajectory waypoints
-        v (float): current velocity
+        cv (numpy.ndarray): velocities of the reference trajectory waypoints
         dt (float): time step
         N (int): number of points to interpolate
         reference_trajectory (numpy.ndarray): reference trajectory waypoints
@@ -133,13 +134,16 @@ def calc_interpolated_reference_trajectory(x, y, cx, cy, v, dt, N, reference_tra
     # Find the total number of waypoints in the reference trajectory
     ncourse = len(cx)
 
-    # based on current velocity, distance traveled on the ref line between time steps in interpolation domain "t"
-    travel = abs(v) * dt
-    dind = travel / dl
-    t_list = t_current + np.insert(
-        np.cumsum(np.repeat(dind, N)), 0, 0
-    )
-    
+    # start from the velocity at the current index, calculate next point, 
+    # interpolate linearly the speed and then use that speed to get next point,
+    # Repeat this for N points
+    current_speed = (1 - t_current) * cv[ind_current] + t_current * cv[(ind_current + 1) % ncourse]
+    t_list = np.zeros(N+1)
+    t_list[0] = t_current
+    for i in range(1, N+1):
+        t_list[i] = t_list[i-1] + (current_speed * dt) / dl
+        current_speed = (1 - t_list[i]) * cv[ind_current] + t_list[i] * cv[(ind_current + 1) % ncourse]
+
     # Get the indices of the previous point to interpolate with for each point
     ind_list = t_list.astype(int) + ind_current
 
@@ -155,6 +159,29 @@ def calc_interpolated_reference_trajectory(x, y, cx, cy, v, dt, N, reference_tra
 
     # Interpolate between the previous and next points by (1-t)*ref[i] + t*ref[i+1]
     ref_list = (1 - t_list).reshape(-1, 1) * prev_states + t_list.reshape(-1, 1) * next_states
+
+    if False:
+        import matplotlib.pyplot as plt
+        plt.plot(cx, cy, c="r", label="Reference Trajectory")
+        plt.scatter(ref_list[:, 0], ref_list[:, 1], c="b", marker="o", label="Interpolated Trajectory")
+        plt.scatter(ref_list_old_method[:, 0], ref_list_old_method[:, 1], c="g", marker="^", label="Old Method Interpolated Trajectory")
+        plt.scatter(x, y, c="k", marker="x", label="Current Position")
+        plt.legend()
+        # Zoom in to the references based on their min and maxes
+        all_x = np.concatenate([ref_list[:, 0], ref_list_old_method[:, 0]])
+        all_y = np.concatenate([ref_list[:, 1], ref_list_old_method[:, 1]])
+        plt.xlim(np.min(all_x) - 0.5, np.max(all_x) + 0.5)
+        plt.ylim(np.min(all_y) - 0.5, np.max(all_y) + 0.5)
+        plt.pause(0.001)
+    if yaw_idx is not None:
+        # Reference is in [0, 2pi] so convert to [-pi, pi]
+        ref_list[:, yaw_idx] = (ref_list[:, yaw_idx] + np.pi) % (2 * np.pi) - np.pi
+
+        # If the reference switches signs compared to current state (i.e jumps from -np.pi + eps to np+pi - eps),
+        # we need to adjust the reference yaw to match the current state yaw.
+        # This is to avoid large yaw errors that can cause the MPC to fail.
+        condition = np.abs(ref_list[:, yaw_idx] - yaw) > np.pi
+        ref_list[condition, yaw_idx] = ref_list[condition, yaw_idx] + 2 * np.pi * np.sign(yaw - ref_list[condition, yaw_idx])
 
     return ref_list   
 

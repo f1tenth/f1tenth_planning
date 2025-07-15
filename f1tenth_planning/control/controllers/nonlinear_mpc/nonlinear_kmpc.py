@@ -180,21 +180,8 @@ class Kinematic_NMPC_Planner(Controller):
 
         cx = self.waypoints[:, 0]
         cy = self.waypoints[:, 1]
-        v_max_prev = np.max(self.waypoints[:, 3]) if self.waypoints is not None else v
-        self.ref_traj = calc_interpolated_reference_trajectory(
-            x, y, cx, cy, v_max_prev, self.config.dt, self.config.N, self.waypoints
-        ).T.copy()
-        # Reference is in [0, 2pi] so convert to [-pi, pi]
-        self.ref_traj[4, :] = (self.ref_traj[4, :] + np.pi) % (2 * np.pi) - np.pi
-
-        # If the reference switches signs compared to current state (i.e jumps from -np.pi + eps to np+pi - eps),
-        # we need to adjust the reference yaw to match the current state yaw.
-        # This is to avoid large yaw errors that can cause the MPC to fail.
-        self.ref_traj[4, :] = np.where(
-            np.abs(self.ref_traj[4, :] - x0[4]) > np.pi,
-            self.ref_traj[4, :] + 2 * np.pi * np.sign(x0[4] - self.ref_traj[4, :]),
-            self.ref_traj[4, :],
-        )
+        cv = self.waypoints[:, 3] 
+        self.ref_traj = calc_interpolated_reference_trajectory(x, y, yaw, cx, cy, cv, self.config.dt, self.config.N, self.waypoints, yaw_idx=4).T.copy()
 
         opti_params = None
         if params is not None:

@@ -29,9 +29,15 @@ class Kinematic_MPC_Planner(Controller):
         ]).T
         
         x_min = np.array([-np.inf, -np.inf, self.params.MIN_STEER, self.params.MIN_SPEED, -np.inf])
-        x_max = np.array([+np.inf, +np.inf, self.params.MAX_STEER, 5.0, +np.inf])
+        x_max = np.array([+np.inf, +np.inf, self.params.MAX_STEER, self.params.MAX_SPEED, +np.inf])
         u_min = np.array([self.params.MIN_DSTEER, self.params.MIN_ACCEL])
         u_max = np.array([self.params.MAX_DSTEER, self.params.MAX_ACCEL])
+        
+        self.config.x_min = x_min
+        self.config.x_max = x_max
+        self.config.u_min = u_min
+        self.config.u_max = u_max
+
         self.model = Kinematic_Bicycle_Model(self.params)
         self.solver = LTV_MPC_Solver(self.config, self.model) 
 
@@ -116,16 +122,8 @@ class Kinematic_MPC_Planner(Controller):
         
         cx = self.waypoints[:, 0]
         cy = self.waypoints[:, 1]
-        v_max_prev = np.mean(self.x_pred[3, :]) if self.x_pred is not None else v
-        self.ref_traj = calc_interpolated_reference_trajectory(x, y, cx, cy, v_max_prev, self.config.dt, self.config.N, self.waypoints).T.copy()
-        # Reference is in [0, 2pi] so convert to [-pi, pi]
-        self.ref_traj[4, :] = (self.ref_traj[4, :] + np.pi) % (2 * np.pi) - np.pi
-
-        # If the reference switches signs compared to current state (i.e jumps from -np.pi + eps to np+pi - eps),
-        # we need to adjust the reference yaw to match the current state yaw.
-        # This is to avoid large yaw errors that can cause the MPC to fail.
-        condition = np.abs(self.ref_traj[4, :] - x0[4]) > np.pi
-        self.ref_traj[4, condition] = self.ref_traj[4, condition] + 2 * np.pi * np.sign(x0[4] - self.ref_traj[4, condition])
+        cv = self.waypoints[:, 3]
+        self.ref_traj = calc_interpolated_reference_trajectory(x, y, yaw, cx, cy, cv, self.config.dt, self.config.N, self.waypoints, yaw_idx=4).T.copy()
 
         self.x_pred, self.u_pred = self.solver.solve(x0, self.ref_traj, Q, P, R, Rd)
 
