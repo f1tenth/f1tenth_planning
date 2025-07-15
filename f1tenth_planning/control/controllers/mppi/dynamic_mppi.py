@@ -222,7 +222,7 @@ class Dynamic_MPPI_Planner(Controller):
         cx = self.waypoints[:, 0]
         cy = self.waypoints[:, 1]
         cv = self.waypoints[:, 3] 
-        self.ref_traj = calc_interpolated_reference_trajectory(x, y, yaw, cx, cy, cv, self.config.dt, self.config.N, self.waypoints, yaw_idx=4).T.copy()
+        self.ref_traj = calc_interpolated_reference_trajectory(x, y, yaw, cx, cy, cv, self.solver.config.dt, self.solver.config.N, self.waypoints, yaw_idx=4).T.copy()
 
         p = None
         if params is not None:

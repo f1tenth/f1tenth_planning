@@ -8,6 +8,7 @@ from f1tenth_planning.control import Nonlinear_Dynamic_MPC_Planner
 from f1tenth_planning.control.config.dynamics_config import (
     fullscale_params,
     f1fifth_params,
+    f1tenth_params,
     update_config_from_dict,
 )
 
@@ -29,13 +30,13 @@ def main():
             "num_agents": 1,
             "control_input": "accl",
             "observation_config": {"type": "dynamic_state"},
-            "params": F110Env.f1fifth_vehicle_params(),
+            "params": F110Env.f1tenth_vehicle_params(),
         },
         render_mode="unlimited",
     )
 
     # create planner
-    planner = Nonlinear_Dynamic_MPC_Planner(track=env.unwrapped.track, params=f1fifth_params())
+    planner = Nonlinear_Dynamic_MPC_Planner(track=env.unwrapped.track, params=f1tenth_params())
     planner.render_waypoints(env.unwrapped.renderer)
     env.unwrapped.add_render_callback(planner.render_local_plan)
     env.unwrapped.add_render_callback(planner.render_control_solution)
