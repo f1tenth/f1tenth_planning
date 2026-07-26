@@ -241,7 +241,7 @@ class LQRController(Controller):
             speed (float): Target speed.
         """
         if waypoints is not None:
-            if waypoints.shape[1] < 5 or len(waypoints.shape) != 2:
+            if len(waypoints.shape) != 2 or waypoints.shape[1] < 5:
                 raise ValueError("Waypoints needs to be a (Nxm), m >= 5, numpy array!")
             self.waypoints = waypoints
         else:

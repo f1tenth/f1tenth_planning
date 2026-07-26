@@ -51,7 +51,7 @@ class MPCSolver(ABC):
             R (np.ndarray, optional): custom control input cost matrix. If None, uses default
 
         Returns:
-            np.ndarray: optimal control input of shape (nu, N)
             np.ndarray: optimal state trajectory of shape (nx, N+1)
+            np.ndarray: optimal control input of shape (nu, N)
         """
         raise NotImplementedError("This method should be overridden by subclasses.")

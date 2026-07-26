@@ -1,3 +1,4 @@
+import copy
 from functools import partial
 from f1tenth_planning.control.dynamics_model import DynamicsModel
 from f1tenth_planning.control.config.dynamics_config import DynamicsConfig
@@ -43,8 +44,9 @@ class DynamicBicycleModel(DynamicsModel):
         Returns:
             np.ndarray: state derivative
         """
-        if params is not None:
-            self.params = params
+        # Use the passed-in params for this call only; never mutate self.params
+        # (a one-off derivative evaluation must not rebind the model's config).
+        p = self.params if params is None else params
 
         x, y, delta, v, yaw, yaw_rate, slip_angle = state
         delta_v, a = control
@@ -58,19 +60,19 @@ class DynamicBicycleModel(DynamicsModel):
         dyaw = 0
         ddyaw = 0
         dslip_angle = 0
-        if np.abs(v) <= 0.1:
-            # derivative of yaw "kinemaitcally"
-            dyaw = v * np.cos(slip_angle) / self.params.WHEELBASE * np.tan(delta)
+        if v < 0.5:
+            # kinematic (low-speed) regime; threshold matches the gym switch (V < 0.5)
+            dyaw = v * np.cos(slip_angle) / p.WHEELBASE * np.tan(delta)
 
             # derivative of slip angle and yaw rate
-            dslip_angle = (self.params.LR * delta_v) / (
-                self.params.WHEELBASE
+            dslip_angle = (p.LR * delta_v) / (
+                p.WHEELBASE
                 * np.cos(delta) ** 2
-                * (1 + (np.tan(delta) * self.params.LR / self.params.WHEELBASE) ** 2)
+                * (1 + (np.tan(delta) * p.LR / p.WHEELBASE) ** 2)
             )
             ddyaw = (
                 1
-                / self.params.WHEELBASE
+                / p.WHEELBASE
                 * (
                     a * np.cos(slip_angle) * np.tan(delta)
                     - v * np.sin(slip_angle) * np.tan(delta) * dslip_angle
@@ -81,14 +83,14 @@ class DynamicBicycleModel(DynamicsModel):
             dyaw = yaw_rate
 
             # Extract params for more readable equations
-            mu = self.params.MU
-            m = self.params.M
-            I = self.params.I
-            lr = self.params.LR
-            lf = self.params.LF
-            C_Sf = self.params.C_SF
-            C_Sr = self.params.C_SR
-            h = self.params.H
+            mu = p.MU
+            m = p.M
+            I = p.I
+            lr = p.LR
+            lf = p.LF
+            C_Sf = p.C_SF
+            C_Sr = p.C_SR
+            h = p.H
             g = 9.81
 
             ddyaw = (
@@ -211,7 +213,7 @@ class DynamicBicycleModel(DynamicsModel):
         dslip_angle_ks = (lr * delta_v) / (
             wheelbase
             * jnp.cos(delta) ** 2
-            * (1 + (jnp.tan(delta) ** 2 * lr / wheelbase) ** 2)
+            * (1 + (jnp.tan(delta) * lr / wheelbase) ** 2)
         )
         ddyaw_ks = (
             1
@@ -225,10 +227,15 @@ class DynamicBicycleModel(DynamicsModel):
 
         dyaw_st = yaw_rate
 
+        # lax.select evaluates BOTH branches, so guard the 1/v terms to keep the
+        # (discarded) high-speed branch finite at v=0 — otherwise jax.grad -> NaN.
+        epsilon = 1e-4
+        v_eps = v + epsilon
+
         ddyaw_st = (
             -mu
             * m
-            / (v * I * (lr + lf))
+            / (v_eps * I * (lr + lf))
             * (lf**2 * C_Sf * (g * lr - a * h) + lr**2 * C_Sr * (g * lf + a * h))
             * yaw_rate
             + mu
@@ -242,20 +249,20 @@ class DynamicBicycleModel(DynamicsModel):
         dslip_angle_st = (
             (
                 mu
-                / (v**2 * (lr + lf))
+                / (v_eps**2 * (lr + lf))
                 * (C_Sr * (g * lf + a * h) * lr - C_Sf * (g * lr - a * h) * lf)
                 - 1
             )
             * yaw_rate
             - mu
-            / (v * (lr + lf))
+            / (v_eps * (lr + lf))
             * (C_Sr * (g * lf + a * h) + C_Sf * (g * lr - a * h))
             * slip_angle
-            + mu / (v * (lr + lf)) * (C_Sf * (g * lr - a * h)) * delta
+            + mu / (v_eps * (lr + lf)) * (C_Sf * (g * lr - a * h)) * delta
         )
 
         return jax.lax.select(
-            jnp.abs(v) <= 1.5,
+            v < 0.5,
             jnp.array([dx, dy, ddelta, dv, dyaw_ks, ddyaw_ks, dslip_angle_ks]),
             jnp.array([dx, dy, ddelta, dv, dyaw_st, ddyaw_st, dslip_angle_st]),
         )
@@ -289,7 +296,7 @@ class DynamicBicycleModel(DynamicsModel):
         d_beta_slow = (lr * delta_v) / (
             (lr + lf)
             * ca.cos(delta) ** 2
-            * (1 + (ca.tan(delta) ** 2 * lr / (lr + lf)) ** 2)
+            * (1 + (ca.tan(delta) * lr / (lr + lf)) ** 2)
         )
         dyaw_rate_slow = (
             1
@@ -318,8 +325,8 @@ class DynamicBicycleModel(DynamicsModel):
         ) - yaw_rate
 
         RHS_LOW_SPEED = ca.vertcat(
-            v * ca.cos(yaw),  # dx/dt = v * cos(yaw + slip_angle)
-            v * ca.sin(yaw),  # dy/dt = v * sin(yaw + slip_angle)
+            v * ca.cos(yaw + slip_angle),  # dx/dt = v * cos(yaw + slip_angle)
+            v * ca.sin(yaw + slip_angle),  # dy/dt = v * sin(yaw + slip_angle)
             delta_v,  # d(delta)/dt = delta_v
             a,  # dv/dt = a
             dyaw_slow,  # dyaw/dt = yaw_rate
@@ -337,7 +344,7 @@ class DynamicBicycleModel(DynamicsModel):
             d_beta_fast,  # dbeta/dt = d_beta
         )  # dx/dt = f(x,u)
 
-        RHS = ca.if_else(v >= 1.5, RHS_HIGH_SPEED, RHS_LOW_SPEED)
+        RHS = ca.if_else(v < 0.5, RHS_LOW_SPEED, RHS_HIGH_SPEED)
 
         return RHS
 
@@ -367,7 +374,8 @@ class DynamicBicycleModel(DynamicsModel):
         Returns:
             dynamics_config: vehicle dynamics parameters
         """
-        current_params = self.params
+        # Return a copy; do not mutate the model's live config in place.
+        current_params = copy.deepcopy(self.params)
         current_params.MU = params[0, 0]
         current_params.M = params[1, 0]
         current_params.I = params[2, 0]
@@ -376,6 +384,11 @@ class DynamicBicycleModel(DynamicsModel):
         current_params.C_SF = params[5, 0]
         current_params.C_SR = params[6, 0]
         current_params.H = params[7, 0]
+        # Keep WHEELBASE consistent with LR/LF: the numpy low-speed branch reads
+        # p.WHEELBASE while jax/casadi recompute lf+lr, so without this they diverge
+        # when LR/LF are perturbed (e.g. during system identification).
+        current_params.WHEELBASE = params[3, 0] + params[4, 0]
+        # params[8] is gravity, a fixed model constant, not a stored config field.
         return current_params
 
     @property
@@ -383,6 +396,7 @@ class DynamicBicycleModel(DynamicsModel):
         """
         Returns the number of parameters for the dynamic model.
         """
+        # Must match parameters_vector_from_config (9 entries, gravity last).
         active_params = [
             self.params.MU,
             self.params.M,
@@ -392,7 +406,7 @@ class DynamicBicycleModel(DynamicsModel):
             self.params.C_SF,
             self.params.C_SR,
             self.params.H,
-            self.params.MU,
+            9.81,  # gravity
         ]
         return len(active_params)
 

@@ -104,28 +104,33 @@ def calc_interpolated_reference_trajectory(
     Returns:
         ref_list (numpy.ndarray): interpolated reference trajectory of shape (N+1, nx) where nx is the number of state variables
     """
-    # Calculate the distance between waypoints in the reference trajectory
-    dl = np.linalg.norm(np.array([cx[1], cy[1]]) - np.array([cx[0], cy[0]]))
-
     # Find the index closest to the current position and the interpolator t \in [0, 1]
     _, _, t_current, ind_current = nearest_point(np.array([x, y]), np.array([cx, cy]).T)
 
     # Find the total number of waypoints in the reference trajectory
     ncourse = len(cx)
 
-    # start from the velocity at the current index, calculate next point,
-    # interpolate linearly the speed and then use that speed to get next point,
-    # Repeat this for N points
-    current_speed = (1 - t_current) * cv[ind_current] + t_current * cv[
-        (ind_current + 1) % ncourse
-    ]
+    # Speed and segment length at fractional index `t` (measured from ind_current),
+    # wrapping around the lap. Reading the segment the horizon has actually reached
+    # (int(t) + ind_current) — not the initial segment — is what keeps the velocity
+    # profile correct once the horizon walks past the starting waypoint. The segment
+    # length is also read locally so a non-uniformly-spaced raceline is handled.
+    def _seg(t):
+        seg = int(t) + ind_current
+        frac = t % 1.0
+        i0 = seg % ncourse
+        i1 = (seg + 1) % ncourse
+        speed = (1 - frac) * cv[i0] + frac * cv[i1]
+        dl = np.linalg.norm(np.array([cx[i1], cy[i1]]) - np.array([cx[i0], cy[i0]]))
+        return speed, max(dl, 1e-9)
+
+    # Integrate arc length forward at the local reference speed to place N+1 points.
     t_list = np.zeros(N + 1)
     t_list[0] = t_current
+    current_speed, dl = _seg(t_current)
     for i in range(1, N + 1):
         t_list[i] = t_list[i - 1] + (current_speed * dt) / dl
-        current_speed = (1 - t_list[i]) * cv[ind_current] + t_list[i] * cv[
-            (ind_current + 1) % ncourse
-        ]
+        current_speed, dl = _seg(t_list[i])
 
     # Get the indices of the previous point to interpolate with for each point
     ind_list = t_list.astype(int) + ind_current
@@ -230,12 +235,12 @@ def intersect_point(point, radius, trajectory, t=0.0, wrap=False):
             t2 = (-b + discriminant) / (np.float32(2.0) * a)
             if t1 >= 0.0 and t1 <= 1.0:
                 first_t = t1
-                first_i = i
+                first_i = i % trajectory.shape[0]
                 first_p = start + t1 * V
                 break
             elif t2 >= 0.0 and t2 <= 1.0:
                 first_t = t2
-                first_i = i
+                first_i = i % trajectory.shape[0]
                 first_p = start + t2 * V
                 break
 
@@ -296,8 +301,9 @@ def solve_lqr(A, B, Q, R, tolerance, max_num_iteration):
             + Q
         )
 
-        # check the difference between P and P_next
-        diff = np.abs(np.max(P_next - P))
+        # check the difference between P and P_next (max absolute element change;
+        # abs must be applied before max, else an all-negative residual exits early)
+        diff = np.max(np.abs(P_next - P))
         P = P_next
 
     K = np.linalg.pinv(BT @ P @ B + R) @ (BT @ P @ A + MT)

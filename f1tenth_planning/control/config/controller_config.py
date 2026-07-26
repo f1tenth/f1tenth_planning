@@ -166,11 +166,18 @@ class LQRConfig:
     dt: float = None
 
     def __post_init__(self):
-        self.Q = np.diag([0.999, 0.0, 0.0066, 0.0])
-        self.R = np.array([[0.75]])
-        self.max_iterations = 50
-        self.eps = 0.01
-        self.dt = 0.01
+        # Fill only unset fields so caller-provided values are respected
+        # (previously every field was overwritten, making LQRConfig inert).
+        if self.Q is None:
+            self.Q = np.diag([0.999, 0.0, 0.0066, 0.0])
+        if self.R is None:
+            self.R = np.array([[0.75]])
+        if self.max_iterations is None:
+            self.max_iterations = 50
+        if self.eps is None:
+            self.eps = 0.01
+        if self.dt is None:
+            self.dt = 0.01
 
 
 @dataclass

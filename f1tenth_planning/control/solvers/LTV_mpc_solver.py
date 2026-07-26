@@ -1,3 +1,5 @@
+import warnings
+
 import cvxpy
 import numpy as np
 from scipy.sparse import block_diag, csc_matrix
@@ -155,7 +157,7 @@ class LTVMPCSolver(MPCSolver):
 
     def update(self, x0, ref_traj, p=None, Q=None, R=None, P=None, Rd=None):
         if p is not None:
-            Warning("Parameter vector p is not used in this LTV-MPC implementation.")
+            warnings.warn("Parameter vector p is not used in this LTV-MPC implementation.")
         super().update(x0, ref_traj, p, Q, R, P, Rd)
         # Set the reference trajectory
         self.ref_traj.value = ref_traj
@@ -194,8 +196,8 @@ class LTVMPCSolver(MPCSolver):
             Rd (np.ndarray): input rate cost matrix
 
         Returns:
-            np.ndarray: optimal control input of shape (nu, N)
             np.ndarray: optimal state trajectory of shape (nx, N+1)
+            np.ndarray: optimal control input of shape (nu, N)
         """
         # Update the parameters of the optimization problem
         self.update(x0, xref, p=p, Q=Q, R=R, P=P, Rd=Rd)
@@ -212,6 +214,12 @@ class LTVMPCSolver(MPCSolver):
         self.Bnnz_k.value = B_block.data
         self.Ck_.value = C_block
 
+        # Capture the previous state prediction BEFORE the warm-start overwrite so it
+        # can be reused if the solve fails. The old fallback referenced an undefined
+        # `pred_x` (NameError on any OSQP failure) and called model.f with self.p (an
+        # ndarray) which the params setter rejects; both are avoided here.
+        last_x = self.xk.value if self.xk.value is not None else xref
+
         # Warm start with shifted control and state variables
         self.xk.value = xref
         self.uk.value = shifted_u
@@ -225,17 +233,14 @@ class LTVMPCSolver(MPCSolver):
         ):
             return self.xk.value, self.uk.value
         else:
-            print(
-                "Optimization problem failed! Returning the last control input shifted by one timestep."
+            warnings.warn(
+                f"LTV-MPC optimization failed (status={self.MPC_prob.status}); "
+                "returning the previous solution shifted by one timestep."
             )
-            self.uk.value = np.hstack(
-                (shifted_u[:, 1:], shifted_u[:, -1].reshape(-1, 1))
-            )
-            last_pred = self.discretizer(
-                self.model.f, pred_x[:, -1], shifted_u[:, -1], self.p, self.config.dt
-            )
-            self.xk.value = np.hstack((pred_x[:, 1:], last_pred.reshape(-1, 1)))
-            return pred_x, shifted_u
+            shifted_x = np.hstack((last_x[:, 1:], last_x[:, -1].reshape(-1, 1)))
+            self.xk.value = shifted_x
+            self.uk.value = shifted_u
+            return shifted_x, shifted_u
 
     def predict_state(self, x0, u_traj):
         """

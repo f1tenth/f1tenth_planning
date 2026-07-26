@@ -172,7 +172,8 @@ class StanleyController(Controller):
             vehicle_state, waypoints
         )
         # compute the steering contribution from the cross-track error
-        cte_front = math.atan2(k_path * ef, vehicle_state[3])
+        # (ef is a (1,) array from the dot product; extract the scalar for atan2)
+        cte_front = math.atan2(k_path * ef[0], vehicle_state[3])
         delta = cte_front + theta_e
 
         return delta, goal_veloctiy
@@ -201,7 +202,7 @@ class StanleyController(Controller):
                 waypoints do not have at least 4 columns.
         """
         if waypoints is not None:
-            if waypoints.shape[1] < 4 or len(waypoints.shape) != 2:
+            if len(waypoints.shape) != 2 or waypoints.shape[1] < 4:
                 raise ValueError("Waypoints need to be a (N x m) numpy array with m >= 4!")
             self.waypoints = waypoints
         else:

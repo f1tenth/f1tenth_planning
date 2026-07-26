@@ -88,6 +88,10 @@ class MPPISolver(MPCSolver):
         self.p = self.model.parameters_vector_from_config(self.model.params)
         self.nu_eye = jnp.eye(self.config.nu)  # [nu, nu]
         self.nu_zeros = jnp.zeros((self.config.nu,))  # [nu]
+        self.samples = None  # (a_sampled, s_sampled, r_sampled); set on first solve()
+        # Persist the PRNG key across solve() calls so exploration noise is
+        # independent each step instead of resetting to the same seed every solve.
+        self.rng = jax.random.PRNGKey(0)
 
     def _init_control(self):
         """
@@ -124,7 +128,7 @@ class MPPISolver(MPCSolver):
             shape=(self.config.n_samples, self.config.N, self.config.nu),
         )
         a = a_opt + da  # [n_samples, N, nu]
-        a = jnp.clip(a, -self.config.u_max, self.config.u_max)  # [n_samples, N, nu]
+        a = jnp.clip(a, self.config.u_min, self.config.u_max)  # [n_samples, N, nu]
 
         s, r = jax.vmap(self._rollout, in_axes=(0, None, None, None, None, None))(
             a, env_state, ref_traj, p, Q, R
@@ -236,14 +240,14 @@ class MPPISolver(MPCSolver):
             xref (np.ndarray): reference trajectory of shape (nx, N+1)
 
         Returns:
-            np.ndarray: optimal control input of shape (nu, N)
             np.ndarray: optimal state trajectory of shape (nx, N+1)
+            np.ndarray: optimal control input of shape (nu, N)
         """
         # Update the parameters of the optimization problem
         super().update(x0, ref_traj, p=p, Q=Q, R=R)
 
-        # Run MPPI iterations
-        rng = jax.random.PRNGKey(0)
+        # Run MPPI iterations (continue the PRNG stream from the previous solve)
+        rng = self.rng
         jax_x0 = jnp.array(x0)
         jax_ref = jnp.array(ref_traj)
         a_opt, a_cov = self.control_params
@@ -271,12 +275,15 @@ class MPPISolver(MPCSolver):
                 )
         else:
             (a_opt, a_cov, rng), (a_sampled, s_sampled, r_sampled) = jax.lax.scan(
-                lambda input_, _: self.iteration_step(
-                    input_, jax_x0, jax_ref, self.p, self.config.Q, self.config.R
-                )(a_opt, a_cov, rng),
+                lambda carry, _: self.iteration_step(
+                    carry, jax_x0, jax_ref, self.p, self.config.Q, self.config.R
+                ),
+                (a_opt, a_cov, rng),
                 None,
                 length=self.config.n_iterations,
             )
+        # persist the evolved PRNG key for the next solve()
+        self.rng = rng
         self.control_params, self.samples = (
             (a_opt, a_cov),
             (a_sampled, s_sampled, r_sampled),

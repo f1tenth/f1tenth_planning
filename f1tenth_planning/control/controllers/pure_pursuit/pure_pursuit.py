@@ -171,7 +171,7 @@ class PurePursuitPlanner(Controller):
             If no valid lookahead point is found, returns (0.0, 0.0) after issuing a warning.
         """
         if waypoints is not None:
-            if waypoints.shape[1] < 3 or len(waypoints.shape) != 2:
+            if len(waypoints.shape) != 2 or waypoints.shape[1] < 3:
                 raise ValueError(
                     "Waypoints need to be a (N x m) numpy array with m >= 3!"
                 )
@@ -198,11 +198,19 @@ class PurePursuitPlanner(Controller):
             warnings.warn("Cannot find lookahead point, stopping...")
             return 0.0, 0.0
 
+        # Use the actual distance to the selected point (the chord length that
+        # get_actuation's pursuit-radius formula assumes). On the reacquire path
+        # _get_current_waypoint returns the nearest raceline point (up to
+        # max_reacquire away), so the nominal lookahead_distance would give a wrong
+        # radius; the actual distance is correct for both branches.
+        actual_lookahead = np.float32(
+            np.linalg.norm(np.asarray(self.lookahead_point[:2], dtype=np.float32) - position)
+        )
         speed, steering_angle = get_actuation(
             pose_theta,
             self.lookahead_point,
             position,
-            lookahead_distance,
+            actual_lookahead,
             self.params.WHEELBASE,
         )
 

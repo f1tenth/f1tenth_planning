@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import casadi as ca
 
@@ -53,11 +55,12 @@ class NonlinearMPCSolver(MPCSolver):
             "Params", self.config.nx + self.model.num_params, self.config.N + 1
         )
 
-        # state weights matrix converted from config Qk
-        Q = ca.diagcat(*np.diag(self.config.Q))
+        # state weights matrix (use the full matrix so off-diagonal coupling in a
+        # non-diagonal Q is preserved rather than silently discarded)
+        Q = ca.DM(self.config.Q)
 
-        # controls weights matrix
-        R = ca.diagcat(*np.diag(self.config.R))
+        # controls weights matrix (full matrix)
+        R = ca.DM(self.config.R)
 
         # System dynamics function
         f = self.model.f_casadi()
@@ -172,7 +175,7 @@ class NonlinearMPCSolver(MPCSolver):
                 raise ValueError(
                     f"Q must be of shape {(self.config.nx, self.config.nx)}, got {Q.shape}"
                 )
-            Warning("Changing Q during solve is not yet implemented.")
+            warnings.warn("Changing Q during solve is not yet implemented; it is ignored.")
         if R is not None:
             if R.shape != (
                 self.config.nu,
@@ -181,7 +184,7 @@ class NonlinearMPCSolver(MPCSolver):
                 raise ValueError(
                     f"R must be of shape {(self.config.nu, self.config.nu)}, got {R.shape}"
                 )
-            Warning("Changing R during solve is not yet implemented.")
+            warnings.warn("Changing R during solve is not yet implemented; it is ignored.")
         self.update(x0, xref, p, Q, R)
         params_x = ca.horzcat(
             x0,  # initial state
@@ -207,6 +210,14 @@ class NonlinearMPCSolver(MPCSolver):
             ubx=self.args["ubx"],
             p=self.args["p"],
         )
+
+        # Warn instead of silently returning garbage if IPOPT did not converge.
+        stats = self.nlp_solver.stats()
+        if not stats.get("success", False):
+            warnings.warn(
+                f"IPOPT did not converge (return_status={stats.get('return_status')}); "
+                "returning the last iterate."
+            )
 
         u_sol = ca.reshape(
             sol["x"][self.config.nx * (self.config.N + 1) :],

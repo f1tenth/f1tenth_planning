@@ -1,3 +1,5 @@
+import copy
+
 from f1tenth_planning.control.dynamics_model import DynamicsModel
 from f1tenth_planning.control.config.dynamics_config import DynamicsConfig
 
@@ -48,8 +50,8 @@ class KinematicBicycleModel(DynamicsModel):
         Returns:
             np.ndarray: state derivative
         """
-        if params is not None:
-            self.params = params
+        # Use the passed-in params for this call only; never mutate self.params.
+        p = self.params if params is None else params
 
         x, y, delta, v, yaw = state
         delta_v, a = control
@@ -59,7 +61,7 @@ class KinematicBicycleModel(DynamicsModel):
         dy = v * np.sin(yaw)
         ddelta = delta_v
         dv = a
-        dyaw = (v / self.params.WHEELBASE) * np.tan(delta)
+        dyaw = (v / p.WHEELBASE) * np.tan(delta)
 
         return np.array([dx, dy, ddelta, dv, dyaw])
 
@@ -114,7 +116,7 @@ class KinematicBicycleModel(DynamicsModel):
         return RHS
 
     def f_jax(
-        self, state: jnp.ndarray, control: jnp.ndarray, params: jnp.ndarray = None
+        self, state: jnp.ndarray, control: jnp.ndarray, params: jnp.ndarray
     ) -> np.ndarray:
         """
         Compute the state derivative given the current state and control input using JAX.
@@ -127,12 +129,15 @@ class KinematicBicycleModel(DynamicsModel):
         Returns:
             np.ndarray: state derivative
         """
-        # Extract params for more readable equations
-        wheelbase = params[0]
+        # Extract params for more readable equations. params is (num_params, 1),
+        # so index 2-D like the dynamic model (params[0] alone is a (1,) array
+        # and would make dyaw a length-1 array -> shape mismatch on jnp.array).
+        wheelbase = params[0, 0]
 
         x, y, delta, v, yaw = state
         delta_v, a = control
 
+        # params is the (num_params, 1) vector from parameters_vector_from_config.
         # Compute the state derivative
         dx = v * jnp.cos(yaw)
         dy = v * jnp.sin(yaw)
@@ -155,7 +160,11 @@ class KinematicBicycleModel(DynamicsModel):
         Returns:
             dynamics_config: vehicle dynamics configuration
         """
-        return DynamicsConfig(WHEELBASE=p[0])
+        # Return a copy of the live config with WHEELBASE updated; constructing a
+        # bare DynamicsConfig(WHEELBASE=...) would raise (22 other required fields).
+        current_params = copy.deepcopy(self.params)
+        current_params.WHEELBASE = p[0, 0]
+        return current_params
 
     @property
     def num_params(self) -> int:
