@@ -182,3 +182,7 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 
+
+# Local reference clone of the simulator. NOT what Python imports (see CODEBASE.md
+# §9.5) -- it is a nested git repo, so `git add` would stage an empty gitlink.
+f1tenth_gym/
