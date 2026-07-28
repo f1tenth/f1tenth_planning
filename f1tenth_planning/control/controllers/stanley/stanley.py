@@ -31,6 +31,7 @@ from f1tenth_gym.envs.track import Track
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
 from f1tenth_planning.control.config.dynamics_config import DynamicsConfig, f1tenth_params
 from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.spec import waypoints_from_raceline
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import pi_2_pi
 
@@ -63,15 +64,15 @@ class StanleyController(Controller):
         target_index (int or None): Index of the current waypoint.
     """
 
+    # Reference columns this controller stores, matched to the raceline by name
+    REFERENCE_FIELDS = ('x', 'y', 'v', 'yaw')
+
     def __init__(self, track: Track, params: DynamicsConfig = f1tenth_params(), k_path=5.0):
         super(StanleyController, self).__init__(track, params, 
                                                  control_mode=(SteerActionEnum.Steering_Angle, LongitudinalActionEnum.Speed))
-        self.waypoints = np.vstack([
-            track.raceline.xs,
-            track.raceline.ys,
-            track.raceline.vxs,
-            track.raceline.yaws
-        ]).T
+        self.waypoints = waypoints_from_raceline(
+            track.raceline, self.reference_field_names
+        )
         self.k_path = k_path
         self.target_point = None
         self.target_index = None
@@ -143,7 +144,14 @@ class StanleyController(Controller):
 
         return delta, goal_veloctiy
 
-    def plan(self, state:dict, waypoints=None, k_path=None):
+    def reset(self) -> None:
+        """Clear the cached target point and last local plan."""
+        self.target_point = None
+        self.target_index = None
+        self.local_plan = None
+        self.control_solution = None
+
+    def compute_control(self, state:dict, waypoints=None, k_path=None):
         """
         Compute the control commands for trajectory tracking of the vehicle.
 

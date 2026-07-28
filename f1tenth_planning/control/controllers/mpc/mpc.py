@@ -9,28 +9,8 @@ from f1tenth_planning.control.config.dynamics_config import (
 from f1tenth_planning.control.mpc_solver import MPCSolver
 from f1tenth_planning.control.dynamics_model import DynamicsModel
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
-from f1tenth_planning.control.spec import RACELINE_ATTR_FOR_STATE
+from f1tenth_planning.control.spec import waypoints_from_raceline
 from f1tenth_planning.utils.utils import jnp_to_np
-
-
-def reference_waypoints_for_model(track: Track, model: DynamicsModel) -> np.ndarray:
-    """Build an (N_waypoints, nx) reference matrix in `model`'s state layout.
-
-    Columns are matched to the raceline **by variable name**, so adding a model with a
-    different state vector needs no change here. Names the raceline does not carry
-    (steering angle, yaw rate, slip angle) are zero-filled.
-    """
-    raceline = track.raceline
-    n = len(raceline.xs)
-    columns = []
-    for name in model.state.names:
-        attr = RACELINE_ATTR_FOR_STATE.get(name)
-        values = getattr(raceline, attr, None) if attr else None
-        if values is None:
-            columns.append(np.zeros(n))
-        else:
-            columns.append(np.asarray(values, dtype=float))
-    return np.vstack(columns).T
 
 
 class MPCController(Controller):
@@ -76,7 +56,9 @@ class MPCController(Controller):
         # Reference waypoints in the model's own state layout: each column is the
         # raceline field that matches the state variable's name, zeros where the
         # raceline carries nothing for it (e.g. steering angle, yaw rate, slip).
-        self.waypoints = reference_waypoints_for_model(track, model)
+        self.waypoints = waypoints_from_raceline(
+            track.raceline, self.reference_field_names
+        )
 
         # Reference velocity bounds (for clipping reference trajectory)
         v_idx = model.state.index("v")
@@ -92,7 +74,37 @@ class MPCController(Controller):
         self.control_solution = None
         self.local_plan = None
 
-    def plan(
+    @property
+    def reference_field_names(self):
+        """The MPC family tracks a reference in the *model's* state layout."""
+        return self.model.state.names
+
+    def reset(self) -> None:
+        """Drop the warm start, sampling RNG and cached solution.
+
+        MPC solvers carry state between steps (a shifted control sequence, a PRNG
+        key). Without clearing it, a "new episode" continues from the previous one.
+        """
+        solver = self.solver
+        if hasattr(solver, "_init_control"):
+            solver.control_params = solver._init_control()
+        if hasattr(solver, "rng"):
+            import jax
+
+            solver.rng = jax.random.PRNGKey(0)
+        if hasattr(solver, "samples"):
+            solver.samples = None
+        self.x_pred = None
+        self.u_pred = None
+        self.ref_traj = None
+        self.local_plan = None
+        self.control_solution = None
+
+    def _apply_config(self, config) -> None:
+        """Route a new algorithm config to the solver."""
+        self.solver.config = config
+
+    def compute_control(
         self,
         state: dict,
         waypoints=None,

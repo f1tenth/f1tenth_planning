@@ -179,7 +179,7 @@ def main():
 
     while not done:
         # Plan next control action
-        steerv, accl = planner.plan(obs["agent_0"])
+        steerv, accl = planner.compute_control(obs["agent_0"])
 
         # Step environment
         obs, timestep, terminated, truncated, infos = env.step(

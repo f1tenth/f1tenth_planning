@@ -134,14 +134,12 @@ def test_model_without_declared_names_raises():
 # ------------------------------------------------------- reference construction
 def test_reference_waypoints_built_in_model_layout(track):
     """The waypoint matrix must match the model's own state width and ordering."""
-    from f1tenth_planning.control.controllers.mpc.mpc import (
-        reference_waypoints_for_model,
-    )
+    from f1tenth_planning.control.spec import waypoints_from_raceline
 
     params = f1tenth_params()
     for model_cls in (KinematicBicycleModel, DynamicBicycleModel):
         model = model_cls(params)
-        wp = reference_waypoints_for_model(track, model)
+        wp = waypoints_from_raceline(track.raceline, model.state.names)
         idx = model.state.idx
 
         assert wp.shape[1] == model.nx

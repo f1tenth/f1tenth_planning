@@ -48,7 +48,7 @@ def main():
     laptime = 0.0
     start = time.time()
     while not done:
-        steerv, accl = planner.plan(obs["agent_0"])
+        steerv, accl = planner.compute_control(obs["agent_0"])
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steerv, accl]])
         )

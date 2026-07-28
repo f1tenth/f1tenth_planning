@@ -42,12 +42,12 @@ MIN_PROGRESS_FRACTION = 0.08
 
 
 def _default_plan(controller, obs):
-    return controller.plan(obs)
+    return controller.compute_control(obs)
 
 
 def _stanley_plan(controller, obs):
     """Stanley is tuned at the call site in examples/control/stanley.py."""
-    steer, speed = controller.plan(obs, k_path=7.0)
+    steer, speed = controller.compute_control(obs, k_path=7.0)
     return steer, 0.7 * speed
 
 

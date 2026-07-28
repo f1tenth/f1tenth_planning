@@ -44,6 +44,35 @@ RACELINE_ATTR_FOR_STATE = {
 }
 
 
+def waypoints_from_raceline(raceline, names) -> "np.ndarray":
+    """Build an ``(N, len(names))`` waypoint matrix from a gym ``Raceline``.
+
+    Columns are matched to the raceline **by variable name**, so a controller only has
+    to declare which fields it needs and never has to agree with anyone else about
+    column order. Names the raceline does not carry (steering angle, yaw rate, slip
+    angle) are zero-filled.
+
+    This is what removes the historical trap where "column 3" meant *yaw* to the
+    classical controllers and *velocity* to the MPC family.
+    """
+    import numpy as np
+
+    n = len(raceline.xs)
+    # Preserve the raceline's dtype (float32 in the gym). The numba kernels in
+    # utils.py dispatch on dtype, so silently widening to float64 here makes
+    # np.dot(waypoint, position) a mixed-dtype call that numba refuses to compile.
+    dtype = np.asarray(raceline.xs).dtype
+    columns = []
+    for name in names:
+        attr = RACELINE_ATTR_FOR_STATE.get(name)
+        values = getattr(raceline, attr, None) if attr else None
+        if values is None:
+            columns.append(np.zeros(n, dtype=dtype))
+        else:
+            columns.append(np.asarray(values, dtype=dtype))
+    return np.vstack(columns).T
+
+
 class VariableSpec:
     """The named layout of a state or control vector.
 

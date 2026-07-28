@@ -10,6 +10,7 @@ from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import intersect_point
 from f1tenth_planning.utils.utils import get_actuation
 from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.spec import waypoints_from_raceline
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
 from f1tenth_planning.control.config.dynamics_config import (
     DynamicsConfig,
@@ -40,6 +41,9 @@ class PurePursuitPlanner(Controller):
         target_index (int or None): Index of the current waypoint.
     """
 
+    # Reference columns this controller stores, matched to the raceline by name
+    REFERENCE_FIELDS = ('x', 'y', 'v', 'yaw')
+
     def __init__(
         self,
         track: Track,
@@ -52,14 +56,9 @@ class PurePursuitPlanner(Controller):
             params,
             control_mode=(SteerActionEnum.Steering_Angle, LongitudinalActionEnum.Speed),
         )
-        self.waypoints = np.vstack(
-            [
-                track.raceline.xs,
-                track.raceline.ys,
-                track.raceline.vxs,
-                track.raceline.yaws,
-            ]
-        ).T
+        self.waypoints = waypoints_from_raceline(
+            track.raceline, self.reference_field_names
+        )
 
         self.lookahead_distance = lookahead_distance
         self.max_reacquire = max_reacquire
@@ -107,7 +106,14 @@ class PurePursuitPlanner(Controller):
         else:
             return None
 
-    def plan(self, state: dict, waypoints=None, lookahead_distance=None):
+    def reset(self) -> None:
+        """Clear the cached lookahead target and last local plan."""
+        self.lookahead_point = None
+        self.target_index = None
+        self.local_plan = None
+        self.control_solution = None
+
+    def compute_control(self, state: dict, waypoints=None, lookahead_distance=None):
         """
         Computes the steering angle and speed command based on the current state of the vehicle
         and the target waypoint found using the lookahead method.

@@ -32,6 +32,7 @@ from f1tenth_gym.envs.track import Track
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
 from f1tenth_planning.control.config.dynamics_config import DynamicsConfig, f1tenth_params
 from f1tenth_planning.control.controller import Controller
+from f1tenth_planning.control.spec import waypoints_from_raceline
 from f1tenth_planning.control.config.controller_config import LQRConfig
 from f1tenth_planning.utils.utils import nearest_point
 from f1tenth_planning.utils.utils import update_matrix
@@ -56,6 +57,9 @@ class LQRController(Controller):
         vehicle_control_e_cog (float): lateral error of cog to ref trajectory
         vehicle_control_theta_e (float): yaw error to ref trajectory
     """
+
+    # Reference columns this controller stores, matched to the raceline by name
+    REFERENCE_FIELDS = ('x', 'y', 'v', 'yaw', 'curvature')
     def __init__(self, 
                  track: Track, 
                  params: DynamicsConfig = f1tenth_params(), 
@@ -63,13 +67,9 @@ class LQRController(Controller):
                  ):
         super(LQRController, self).__init__(track, params,
                                             control_mode=(SteerActionEnum.Steering_Angle, LongitudinalActionEnum.Speed))
-        self.waypoints = np.vstack([
-            track.raceline.xs,
-            track.raceline.ys,
-            track.raceline.vxs,
-            track.raceline.yaws,
-            track.raceline.ks
-        ]).T
+        self.waypoints = waypoints_from_raceline(
+            track.raceline, self.reference_field_names
+        )
 
         self.config = config
         self.vehicle_control_e_cog = 0  # e_cg: lateral error of CoG to ref trajectory
@@ -189,7 +189,19 @@ class LQRController(Controller):
 
         return steer_angle, v_ref
 
-    def plan(
+    def reset(self) -> None:
+        """Clear the cached tracking errors used for finite differencing."""
+        self.vehicle_control_e_cog = 0
+        self.vehicle_control_theta_e = 0
+        self.closest_point = None
+        self.target_index = None
+        self.local_plan = None
+        self.control_solution = None
+
+    def _apply_config(self, config) -> None:
+        self.config = config
+
+    def compute_control(
         self, state:dict, waypoints=None, config : LQRConfig = None
     ):
         """

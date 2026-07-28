@@ -38,7 +38,7 @@ def main():
     env.render()
 
     while not done:
-        steerv, accl = planner.plan(obs["agent_0"])
+        steerv, accl = planner.compute_control(obs["agent_0"])
         obs, timestep, terminated, truncated, infos = env.step(
             np.array([[steerv, accl]])
         )

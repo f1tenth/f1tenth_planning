@@ -169,7 +169,7 @@ class ControlRosWrapper(Node):
         }
 
         # Plan control commands
-        action, info = self.planner.plan(state_dict, params=self.params)
+        action, info = self.planner.compute_control(state_dict, params=self.params)
         steer_action = float(action[0])
         longitudtinal_action = float(action[1])
 

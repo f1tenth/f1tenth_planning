@@ -44,7 +44,7 @@ def main():
     # run simulation
     laptime = 0.0
     while not done:
-        steer, speed = planner.plan(
+        steer, speed = planner.compute_control(
             obs["agent_0"],
             k_path=7.0,
         )
