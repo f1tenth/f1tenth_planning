@@ -204,16 +204,45 @@ class APMPPIConfig(MPPIConfig):
         lambdas_sample_range (np.ndarray): Range of the lambda penalty multipliers of size (n_constraints, 2).
         constraints (List[Callable]): List of constraint functions. Each function should have signature
             constraint(x, u) -> (N,) where positive values indicate violation.
+        x_clip_min (np.ndarray): Lower bound for STABILITY CLIPPING of rollout states.
+        x_clip_max (np.ndarray): Upper bound for stability clipping of rollout states.
+
+    There are two distinct kinds of state bound here, and conflating them silently
+    disables the adaptive penalty:
+
+    * ``x_clip_min``/``x_clip_max`` mirror what the vehicle physically enforces (a
+      servo saturating), and exist to stop a rollout diverging to infinity. Clipped
+      states can never *violate* anything, so they are never penalised.
+    * ``constraints`` are soft penalties that guide the sampler toward feasibility.
+
+    Clipping a quantity you also constrain means the rollouts can never exceed the
+    bound the constraint polices, so the penalty is dead code. Clip bounds therefore
+    default to +/-inf (no clipping) and must be set *wider* than the constrained
+    limits -- see examples/control/dynamic_ap_mppi.py.
     """
 
     n_lambdas: int = field(default=16)
     lambdas_sample_range: np.ndarray = field(default=None)
     constraints: List[Callable] = field(default_factory=list)
     n_constraints: int = field(default=0)
+    x_clip_min: np.ndarray = field(default=None)
+    x_clip_max: np.ndarray = field(default=None)
 
     def __post_init__(self):
         super().__post_init__()
         self.n_constraints = len(self.constraints)
+        # No stability clipping by default, so constraint violations stay visible
+        # in the rollouts (the whole point of the adaptive penalty).
+        if self.x_clip_min is None:
+            self.x_clip_min = np.full(self.nx, -np.inf)
+        if self.x_clip_max is None:
+            self.x_clip_max = np.full(self.nx, np.inf)
+        assert self.x_clip_min.shape == (self.nx,), (
+            f"x_clip_min must be ({self.nx},), got {self.x_clip_min.shape}"
+        )
+        assert self.x_clip_max.shape == (self.nx,), (
+            f"x_clip_max must be ({self.nx},), got {self.x_clip_max.shape}"
+        )
         # Default lambdas_sample_range if not provided
         if self.lambdas_sample_range is None:
             if self.n_constraints > 0:

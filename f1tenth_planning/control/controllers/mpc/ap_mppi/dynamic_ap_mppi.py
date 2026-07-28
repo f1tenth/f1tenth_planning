@@ -189,6 +189,13 @@ class DynamicAPMPPIPlanner(MPCController):
             config.u_min = np.array([params.MIN_DSTEER, params.MIN_ACCEL])
             config.u_max = np.array([params.MAX_DSTEER, params.MAX_ACCEL])
 
+            # Stability clipping is intentionally left OFF (+/-inf) for the states we
+            # constrain. Clipping a quantity that a constraint also polices would stop
+            # any rollout from violating it, so every penalty weight would look
+            # equally feasible and the adaptive penalty would do nothing. Set
+            # config.x_clip_min/max explicitly, and wider than the constrained bounds,
+            # only if rollouts actually diverge.
+
         # If user passed their own config, respect their bounds (don't overwrite)
 
         if solver is None:

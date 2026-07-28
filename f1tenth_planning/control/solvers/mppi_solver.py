@@ -16,36 +16,132 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 jax.config.update("jax_compilation_cache_dir", str(jax_cache_dir))
 
 
-def truncated_gaussian_sampler(key, mean, low, high, cov):
-    """
-    Multivariate truncated Gaussian sampler using Cholesky decomposition.
-    Generates samples from a truncated Gaussian distribution with given mean, covariance, and bounds.
+# ===========================================================================
+# Jitted kernels (DESIGN.md §7.4)
+#
+# These are module-level functions taking everything explicitly, rather than
+# methods with `self` marked static. The split is:
+#
+#   static  -- values that determine the SHAPE of the computation:
+#              N, n_samples, nu, the scan flag, and the step/reward callables.
+#   traced  -- numbers that flow THROUGH it: costs, bounds, dynamics params,
+#              temperature, damping, dt.
+#
+# A tuning value read off a static `self` is baked into the trace at first call
+# and can never change again -- that is the bug this structure removes. Note
+# `static_argnames` rather than `static_argnums`: a positional index list
+# silently desynchronises from a long signature.
+# ===========================================================================
 
-    Parameters:
-      key (jax.random.PRNGKey): Random key for sampling
-      mean (numpy.ndarray): Mean of the distribution
-      low (numpy.ndarray): Lower bounds for each dimension
-      high (numpy.ndarray): Upper bounds for each dimension
-      cov (numpy.ndarray): Covariance matrix (optional)
+
+@partial(jax.jit, static_argnames=("N", "nu", "scan", "step_fn", "reward_fn"))
+def _rollout_kernel(
+    u, x0, xref, p, Q, R, dt, *, N, nu, scan, step_fn, reward_fn
+):
+    """Roll a single control sequence forward and score it.
+
+    Args:
+        u: (N, nu) control sequence.
+        x0: (nx,) initial state.
+        xref: (nx, N+1) reference trajectory.
+        p: dynamics parameter vector.
+        Q, R: state and control cost matrices.
+        dt: integration step.
+
     Returns:
-      numpy.ndarray: One sample from the truncated Gaussian distribution
-
+        (s, r): (N, nx) state trajectory and (N,) per-step reward.
     """
-    R = jnp.linalg.cholesky(cov)
 
-    # Adjust the bounds for the truncated normal distribution
-    adjusted_low = (low - mean) / jnp.diag(R)
-    adjusted_high = (high - mean) / jnp.diag(R)
+    def rollout_step(carry, u_t):
+        state, ind = carry
+        u_t = jnp.reshape(u_t, (nu,))
+        state = step_fn(state, u_t, p, dt)
+        r = reward_fn(state, u_t, xref[:, ind + 1], Q, R)
+        return (state, ind + 1), ((state, ind + 1), r)
 
-    # Generate truncated standard normal samples
-    samples = jax.random.truncated_normal(
-        key,
-        lower=adjusted_low,
-        upper=adjusted_high,
+    if not scan:
+        # python equivalent of lax.scan
+        scan_output = []
+        carry = x0
+        for t in range(N):
+            carry, output = rollout_step((carry, t), u[t, :])
+            carry = carry[0]
+            scan_output.append(output)
+        s, r = jax.tree_util.tree_map(lambda *x: jnp.stack(x), *scan_output)
+        s = s[0]
+    else:
+        _, (state_and_index, r) = jax.lax.scan(rollout_step, (x0, 0), u)
+        s = state_and_index[0]
+
+    return (s, r)
+
+
+@partial(jax.jit, static_argnames=("N",))
+def _returns_kernel(r, *, N):
+    """Reward-to-go: R[i] = sum_{j>=i} r[j]."""
+    return jnp.dot(jnp.triu(jnp.ones((N, N))), r)
+
+
+@jax.jit
+def _weights_kernel(returns, temperature, damping):
+    """Softmax weights over samples.
+
+    `temperature` and `damping` are **traced** -- they are the tuning knobs that
+    have to be changeable at runtime.
+    """
+    standardized = (returns - jnp.max(returns)) / (
+        (jnp.max(returns) - jnp.min(returns)) + damping
     )
+    w = jnp.exp(standardized / temperature)
+    return w / jnp.sum(w)
 
-    # Transform back to original space
-    return mean + R @ samples
+
+@partial(
+    jax.jit,
+    static_argnames=(
+        "N", "n_samples", "nu", "scan", "adaptive_cov", "step_fn", "reward_fn",
+    ),
+)
+def _iteration_kernel(
+    a_opt, a_cov, rng,                                  # carry   (traced)
+    x0, ref_traj, p, Q, R,                              # problem (traced)
+    u_min, u_max, temperature, damping, dt,             # tuning  (traced)
+    *,
+    N, n_samples, nu, scan, adaptive_cov, step_fn, reward_fn,   # structural (static)
+):
+    """One MPPI iteration: sample, roll out, weight, update the nominal control."""
+    rng_da, rng = jax.random.split(rng)
+
+    # Truncating the *perturbation* by the current nominal guarantees a = a_opt + da
+    # lands inside the control bounds.
+    da = jax.random.truncated_normal(
+        rng_da,
+        lower=u_min - a_opt,
+        upper=u_max - a_opt,
+        shape=(n_samples, N, nu),
+    )
+    a = jnp.clip(a_opt + da, u_min, u_max)  # [n_samples, N, nu]
+
+    rollout = partial(
+        _rollout_kernel, N=N, nu=nu, scan=scan, step_fn=step_fn, reward_fn=reward_fn
+    )
+    s, r = jax.vmap(rollout, in_axes=(0, None, None, None, None, None, None))(
+        a, x0, ref_traj, p, Q, R, dt
+    )  # s: [n_samples, N, nx], r: [n_samples, N]
+
+    returns = jax.vmap(partial(_returns_kernel, N=N))(r)  # [n_samples, N]
+    w = jax.vmap(partial(_weights_kernel, temperature=temperature, damping=damping),
+                 1, 1)(returns)  # [n_samples, N]
+
+    a_opt = a_opt + jax.vmap(jnp.average, (1, None, 1))(da, 0, w)  # [N, nu]
+
+    if adaptive_cov:
+        a_cov = jax.vmap(jax.vmap(jnp.outer))(da, da)  # [n_samples, N, nu, nu]
+        a_cov = jax.vmap(jnp.average, (1, None, 1))(a_cov, 0, w)  # [N, nu, nu]
+        # prevent loss of rank when one sample is heavily weighted
+        a_cov = a_cov + jnp.eye(nu) * 1e-5
+
+    return (a_opt, a_cov, rng), (a, s, r)
 
 
 class MPPISolver(MPCSolver):
@@ -71,22 +167,27 @@ class MPPISolver(MPCSolver):
     ) -> None:
         """
         Initialize the MPPI solver.
+
         Args:
             config (MPPIConfig): MPPI configuration object, contains MPPI costs and constraints
             model (DynamicsModel): dynamics model object, used to compute the state derivative
             discretizer (function, optional): function to discretize the continuous-time dynamics. Defaults to rk4_discretization.
-            step_function (function, optional): function of the form _step(self, x, u, p) to compute the next state given current state and control input. If None, uses the discretizer with model's f_jax
-            reward_function (function, optional): function of the form _reward(self, x, u, x_ref, Q, R) to compute the reward given current state, control input, reference state, Q, and R. If None, uses the default quadratic cost
-        Returns:
-            None
+            step_function (function, optional): ``step(x, u, p, dt) -> x_next``. Use this
+                for a model that predicts the next state directly instead of a
+                derivative. If None, the discretizer is applied to the model's f_jax.
+            reward_function (function, optional): ``reward(x, u, x_ref, Q, R) -> float``.
+                If None, uses the default quadratic cost.
+
+        Note both callables are **static** to the jitted kernels, so they are built
+        once here and their identity must stay stable; do not rebuild them per step.
         """
         super().__init__(config, model)
         self.config: MPPIConfig = self.config  # For type hinting
         self.discretizer = discretizer
-        if step_function is not None:
-            self._step = step_function
-        if reward_function is not None:
-            self._reward = reward_function
+        self._step_fn = step_function if step_function is not None else self._make_step()
+        self._reward_fn = (
+            reward_function if reward_function is not None else _default_reward
+        )
         self.control_params = self._init_control()  # [N, nu]
         self.p = self.model.parameters_vector_from_config(self.model.params)
         self.nu_eye = jnp.eye(self.config.nu)  # [nu, nu]
@@ -95,6 +196,21 @@ class MPPISolver(MPCSolver):
         # Persist the PRNG key across solve() calls so exploration noise is
         # independent each step instead of resetting to the same seed every solve.
         self.rng = jax.random.PRNGKey(0)
+
+    def _make_step(self):
+        """Build the default step function once, with a stable identity.
+
+        `self._step` as a bound method would be a fresh object on every access, and
+        because the kernels take it as a *static* argument that would retrace on
+        every call.
+        """
+        model_f = self.model.f_jax
+        discretizer = self.discretizer
+
+        def step(x, u, p, dt):
+            return discretizer(model_f, x, u, p, dt)
+
+        return step
 
     def _init_control(self):
         """
@@ -116,52 +232,35 @@ class MPPISolver(MPCSolver):
             a_cov = None
         return (a_opt, a_cov)
 
-    @partial(jax.jit, static_argnums=(0))
-    def iteration_step(self, input_, env_state, ref_traj, p, Q, R):
-        a_opt, a_cov, rng = input_
-        rng_da, rng = jax.random.split(rng)
-        # TODO: FLAG: Check if this is correct
-        adjusted_lower = self.config.u_min - a_opt
-        adjusted_upper = self.config.u_max - a_opt
-        # TODO: Find a way to use the covariance matrix
-        da = jax.random.truncated_normal(
-            rng_da,
-            lower=adjusted_lower,
-            upper=adjusted_upper,
-            shape=(self.config.n_samples, self.config.N, self.config.nu),
+    def _static_kwargs(self):
+        """The structural (compile-time) arguments for the jitted kernels."""
+        return dict(
+            N=self.config.N,
+            n_samples=self.config.n_samples,
+            nu=self.config.nu,
+            scan=self.config.scan,
+            adaptive_cov=self.config.adaptive_covariance,
+            step_fn=self._step_fn,
+            reward_fn=self._reward_fn,
         )
-        a = a_opt + da  # [n_samples, N, nu]
-        a = jnp.clip(a, self.config.u_min, self.config.u_max)  # [n_samples, N, nu]
 
-        s, r = jax.vmap(self._rollout, in_axes=(0, None, None, None, None, None))(
-            a, env_state, ref_traj, p, Q, R
-        )  # [n_samples, N]
-        R = jax.vmap(self._returns)(r)  # [n_samples, N], pylint: disable=invalid-name
-        w = jax.vmap(self._weights, 1, 1)(R)  # [n_samples, N]
-        da_opt = jax.vmap(jnp.average, (1, None, 1))(da, 0, w)  # [N, nu]
-        a_opt = a_opt + da_opt  # [N, nu]
-        if self.config.adaptive_covariance:
-            a_cov = jax.vmap(jax.vmap(jnp.outer))(da, da)  # [n_samples, N, nu, nu]
-            a_cov = jax.vmap(jnp.average, (1, None, 1))(
-                a_cov, 0, w
-            )  # a_cov: [N, nu, nu]
-            # prevent loss of rank when one sample is heavily weighted
-            a_cov = a_cov + self.nu_eye * 0.00001
-        return (a_opt, a_cov, rng), (a, s, r)
+    def iteration_step(self, carry, x0, ref_traj, p, Q, R):
+        """One MPPI iteration. Thin wrapper that routes config to the kernel."""
+        a_opt, a_cov, rng = carry
+        return _iteration_kernel(
+            a_opt, a_cov, rng,
+            x0, ref_traj, p, Q, R,
+            self.config.u_min, self.config.u_max,
+            self.config.temperature, self.config.damping, self.config.dt,
+            **self._static_kwargs(),
+        )
 
-    def _step(self, x, u, p):
-        """
-        Single-step state prediction function.
-        """
-        return self.discretizer(self.model.f_jax, x, u, p, self.config.dt)
-
-    def _reward(self, x, u, x_ref, Q, R):
-        """
-        Single-step reward calculated as the negative of the trajectory tracking error (x^T Q x + u^T R u).
-        """
-        return -(
-            jnp.dot((x - x_ref).T, jnp.dot(Q, (x - x_ref)))
-            + jnp.dot(u.T, jnp.dot(R, u))
+    def _rollout(self, u, x0, xref, p, Q, R):
+        """Roll out a single control sequence (used for the visualised solution)."""
+        return _rollout_kernel(
+            u, x0, xref, p, Q, R, self.config.dt,
+            N=self.config.N, nu=self.config.nu, scan=self.config.scan,
+            step_fn=self._step_fn, reward_fn=self._reward_fn,
         )
 
     def update(self, x0, ref_traj, p=None, Q=None, R=None):
@@ -179,59 +278,6 @@ class MPPISolver(MPCSolver):
         """
         super().update(x0, ref_traj, p=p, Q=Q, R=R)
         return
-
-    def _returns(self, r):
-        # r: [N]
-        return jnp.dot(jnp.triu(jnp.ones((self.config.N, self.config.N))), r)  # R: [N]
-
-    def _weights(self, R):  # pylint: disable=invalid-name
-        # R: [n_samples]
-        # R_stdzd = (R - jnp.min(R)) / ((jnp.max(R) - jnp.min(R)) + self.damping)
-        # R_stdzd = R - jnp.max(R) # [n_samples] np.float32
-        R_stdzd = (R - jnp.max(R)) / ((jnp.max(R) - jnp.min(R)) + self.config.damping)  # pylint: disable=invalid-name
-        w = jnp.exp(R_stdzd / self.config.temperature)  # [n_samples] np.float32
-        w = w / jnp.sum(w)  # [n_samples] np.float32
-        return w
-
-    @partial(jax.jit, static_argnums=(0))
-    def _rollout(self, u, x0, xref, p, Q, R):
-        """
-        Rollout the trajectory given the control inputs and initial state.
-
-        Args:
-            u (np.ndarray): control inputs of shape (N, nu)
-            x0 (np.ndarray): initial state of shape (nx,)
-            xref (np.ndarray): reference trajectory of shape (N+1, nx)
-        Returns:
-            np.ndarray: state trajectory of shape (N+1, nx)
-            np.ndarray: reward trajectory of shape (N+1,)
-        """
-
-        def rollout_step(x, u):
-            state, ind = x
-            u = jnp.reshape(u, (self.config.nu,))
-            state = self._step(state, u, p)
-            r = self._reward(state, u, xref[:, ind + 1], Q, R)
-            x = (state, ind + 1)
-            return x, (x, r)
-
-        if not self.config.scan:
-            # python equivalent of lax.scan
-            scan_output = []
-            for t in range(self.config.N):
-                x0, output = rollout_step((x0, t), u[t, :])
-                x0 = x0[0]
-                scan_output.append(output)
-            s, r = jax.tree_util.tree_map(lambda *x: jnp.stack(x), *scan_output)
-            s = s[0]
-        else:
-            state_and_index_init = (x0, 0)
-            _, (state_and_index, r) = jax.lax.scan(
-                rollout_step, state_and_index_init, u
-            )
-            s = state_and_index[0]
-
-        return (s, r)
 
     def solve(self, x0, ref_traj, vis=True, p=None, Q=None, R=None):
         """
@@ -308,3 +354,10 @@ class MPPISolver(MPCSolver):
             self.xk = jnp.zeros((self.config.nx, self.config.N + 1))  # [nx, N+1]
         self.uk = jnp.transpose(self.uk)  # [nu, N]
         return self.xk, self.uk
+
+
+def _default_reward(x, u, x_ref, Q, R):
+    """Negative quadratic tracking cost: -( (x-xref)' Q (x-xref) + u' R u )."""
+    return -(
+        jnp.dot((x - x_ref).T, jnp.dot(Q, (x - x_ref))) + jnp.dot(u.T, jnp.dot(R, u))
+    )

@@ -61,24 +61,20 @@ def main():
     params = f1tenth_params()
 
     # === STATE BOUNDS STRATEGY ===
-    # There are TWO types of state bounds in AP-MPPI:
+    # There are TWO distinct kinds of state bound in AP-MPPI, and conflating them
+    # silently disables the adaptive penalty:
     #
-    # 1. x_clip_min/x_clip_max: STABILITY CLIPPING during rollouts
-    #    - Mirrors what the system (vehicle) physically enforces
-    #      e.g., if we command too high a steering angle, the vehicle
-    #      servo will saturate at its max steering angle.
-    #    - Clipping prevents numerical issues during rollouts as 
-    #      unbounded steering can quickly blow up to infinity.
-    #    - Clipped states are NOT penalized in the cost function:
-    #         - As the rollouts never exceed these bounds, no penalties are incurred.
+    # 1. config.x_clip_min / x_clip_max: STABILITY CLIPPING during rollouts.
+    #    Mirrors what the vehicle physically enforces (a servo saturating) and stops
+    #    a rollout diverging to infinity. Clipped states can never violate anything,
+    #    so they are never penalised. Defaults to +/-inf (no clipping).
     #
-    # 2. Constraint functions: SOFT PENALTIES for limit violations
-    #    - Constraint penalties guide the optimizer toward feasible trajectories
-    #    - Violations are detected and penalized, not masked by clipping
-    #    - Crucial to NOT clip states that we want to constrain!
+    # 2. Constraint functions: SOFT PENALTIES for limit violations.
+    #    These guide the sampler toward feasible trajectories.
     #
-    # For velocity constraints to work, x_clip_max[3] must be > x_max[3]
-    # so the optimizer can "see" velocity violations in the rollouts.
+    # The rule: never clip a quantity you also constrain. If you need clipping for
+    # numerical stability, set the clip bound *wider* than the constrained limit so
+    # violations remain visible in the rollouts.
 
     # Build state constraints from vehicle parameters
     # x = [x, y, delta, v, yaw, yaw_rate, beta]
@@ -130,9 +126,11 @@ def main():
         -np.inf, -np.inf, -np.inf,
     ])
     config.x_max = np.array([
-        np.inf, np.inf, params.MAX_STEER, np.inf,  # velocity: +inf so constraints work
+        np.inf, np.inf, params.MAX_STEER, params.MAX_SPEED,
         np.inf, np.inf, np.inf,
     ])
+    # No stability clipping needed here: the defaults (+/-inf) keep velocity
+    # violations visible to the constraint, which is what the penalty acts on.
     config.u_min = np.array([params.MIN_DSTEER, params.MIN_ACCEL])
     config.u_max = np.array([params.MAX_DSTEER, params.MAX_ACCEL])
 

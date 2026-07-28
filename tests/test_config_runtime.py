@@ -5,8 +5,10 @@ jax solvers that means tuning values have to arrive as *traced arguments*; anyth
 read off a `static_argnums=(0)` `self` is baked into the trace at first call and can
 never change again (DESIGN.md §7.4).
 
-The `xfail` tests below encode that bug deliberately. They are the acceptance
-criteria for Phase D — when it lands they flip to XPASS and the marker comes off.
+Phase D fixed this by moving the kernels to module-level functions that take every
+tuning value as a traced argument, with only shape-determining values static
+(`static_argnames`). The runtime-reconfiguration tests below are the regression guard
+for that: they failed before Phase D and must keep passing after it.
 """
 import numpy as np
 import pytest
@@ -22,7 +24,10 @@ from f1tenth_planning.control.config.dynamics_config import f1tenth_params  # no
 from f1tenth_planning.control.dynamics_models.dynamic_model import (  # noqa: E402
     DynamicBicycleModel,
 )
-from f1tenth_planning.control.solvers.mppi_solver import MPPISolver  # noqa: E402
+from f1tenth_planning.control.solvers.mppi_solver import (  # noqa: E402
+    MPPISolver,
+    _iteration_kernel,
+)
 
 
 # --------------------------------------------------------------------------
@@ -182,11 +187,6 @@ def test_prng_key_advances_between_solves(mppi_solver):
     assert not np.array_equal(first, second), "PRNG key was reset instead of advanced"
 
 
-@pytest.mark.xfail(
-    reason="DESIGN.md §7.4: tuning values are read off a static `self` and baked "
-    "into the trace. Phase D acceptance criterion.",
-    strict=False,
-)
 def test_tuning_change_takes_effect_at_runtime(mppi_solver):
     """Mutating a tuning value must change the solve result without a rebuild."""
     _reset_solver_state(mppi_solver)
@@ -201,11 +201,6 @@ def test_tuning_change_takes_effect_at_runtime(mppi_solver):
     )
 
 
-@pytest.mark.xfail(
-    reason="DESIGN.md §7.4: `self` is static and hashed by identity, so tuning "
-    "changes cannot retrace and bounds changes are ignored.",
-    strict=False,
-)
 def test_bounds_change_takes_effect_at_runtime(mppi_solver):
     """Tightening the control bounds must clamp the emitted control."""
     _reset_solver_state(mppi_solver)
@@ -229,11 +224,11 @@ def test_tuning_change_does_not_recompile(mppi_solver):
     """
     _reset_solver_state(mppi_solver)
     _solve_once(mppi_solver)
-    before = MPPISolver.iteration_step._cache_size()
+    before = _iteration_kernel._cache_size()
 
     mppi_solver.config.temperature = mppi_solver.config.temperature * 2.0
     _reset_solver_state(mppi_solver)
     _solve_once(mppi_solver)
-    after = MPPISolver.iteration_step._cache_size()
+    after = _iteration_kernel._cache_size()
 
     assert after == before, "a tuning change must not trigger a recompilation"
