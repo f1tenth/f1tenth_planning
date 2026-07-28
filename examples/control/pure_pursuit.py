@@ -9,6 +9,8 @@ from f1tenth_planning.control.config.dynamics_config import (
 from f1tenth_gym.envs.f110_env import F110Env
 
 
+from render_helpers import make_render_callbacks
+
 def main():
     """
     Pure Pursuit example. This example uses fixed waypoints throughout the 2 laps.
@@ -30,9 +32,8 @@ def main():
     # create controller
     planner = PurePursuitPlanner(track=env.unwrapped.track, params=f1tenth_params())
 
-    env.unwrapped.add_render_callback(planner.render_waypoints)
-    env.unwrapped.add_render_callback(planner.render_local_plan)
-    env.unwrapped.add_render_callback(planner.render_control_solution)
+    for callback in make_render_callbacks(planner):
+        env.unwrapped.add_render_callback(callback)
 
     # reset environment
     track = env.unwrapped.track

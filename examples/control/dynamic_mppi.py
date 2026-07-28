@@ -13,6 +13,8 @@ from f1tenth_planning.control.config.dynamics_config import (
 )
 
 
+from render_helpers import make_render_callbacks
+
 def main():
     """
     STMPC example. This example uses fixed waypoints throughout the 2 laps.
@@ -49,9 +51,8 @@ def main():
     planner = NonlinearDynamicMPPIPlanner(
         track=waypoints_track, model=None, solver=None, params=params, config=config
     )
-    env.unwrapped.add_render_callback(planner.render_waypoints)
-    env.unwrapped.add_render_callback(planner.render_local_plan)
-    env.unwrapped.add_render_callback(planner.render_control_solution)
+    for callback in make_render_callbacks(planner, include_samples=True):
+        env.unwrapped.add_render_callback(callback)
 
     # reset environment
     poses = np.array(

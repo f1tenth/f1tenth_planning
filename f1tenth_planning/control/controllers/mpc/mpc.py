@@ -92,39 +92,6 @@ class MPCController(Controller):
         self.control_solution = None
         self.local_plan = None
 
-        self.mpc_solution_render = None
-        self.local_plan_render = None
-
-    def render_control_solution(self, e):
-        """
-        Callback to render the lookahead point on the environment.
-
-        Args:
-            e: The environment renderer instance used for drawing.
-        """
-        if self.x_pred is not None:
-            if self.mpc_solution_render is None:
-                self.mpc_solution_render = e.render_points(
-                    self.control_solution.T, color=(128, 0, 0), size=4
-                )
-            else:
-                self.mpc_solution_render.setData(self.control_solution.T)
-
-    def render_local_plan(self, e):
-        """
-        Render the local plan (series of waypoints) on the environment.
-
-        Args:
-            e: The environment renderer instance used for drawing.
-        """
-        if self.ref_traj is not None:
-            if self.local_plan_render is None:
-                self.local_plan_render = e.render_closed_lines(
-                    self.local_plan, color=(0, 0, 128), size=4
-                )
-            else:
-                self.local_plan_render.setData(self.local_plan)
-
     def plan(
         self,
         state: dict,

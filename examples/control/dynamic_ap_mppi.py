@@ -26,6 +26,8 @@ from f1tenth_planning.control.controllers.mpc.ap_mppi.dynamic_ap_mppi import (
 )
 
 
+from render_helpers import make_render_callbacks
+
 def main():
     """
     AP-MPPI example with state limit constraints.
@@ -143,9 +145,8 @@ def main():
     )
 
     # Add render callbacks
-    env.unwrapped.add_render_callback(planner.render_waypoints)
-    env.unwrapped.add_render_callback(planner.render_local_plan)
-    env.unwrapped.add_render_callback(planner.render_control_solution)
+    for callback in make_render_callbacks(planner, include_samples=True):
+        env.unwrapped.add_render_callback(callback)
 
     # Reset environment at start of track
     poses = np.array(

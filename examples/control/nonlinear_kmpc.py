@@ -6,6 +6,8 @@ import time
 from f1tenth_planning.control import NonlinearKinematicMPCPlanner
 
 
+from render_helpers import make_render_callbacks
+
 def main():
     """
     STMPC example. This example uses fixed waypoints throughout the 2 laps.
@@ -26,9 +28,8 @@ def main():
 
     # create planner
     planner = NonlinearKinematicMPCPlanner(track=env.unwrapped.track)
-    env.unwrapped.add_render_callback(planner.render_waypoints)
-    env.unwrapped.add_render_callback(planner.render_local_plan)
-    env.unwrapped.add_render_callback(planner.render_control_solution)
+    for callback in make_render_callbacks(planner):
+        env.unwrapped.add_render_callback(callback)
 
     # reset environment
     poses = np.array(

@@ -89,30 +89,3 @@ class DynamicMPPIPlanner(MPCController):
             model,
             params,
         )
-        self.sampled_trajectories_render = None
-
-    def render_sampled_trajectories(self, e):
-        """
-        Render the sampled trajectories on the environment.
-
-        Args:
-            e: The environment renderer instance used for drawing.
-        """
-        # Render the sampled trajectories
-        ORANGE = (255, 165, 0)
-        if self.solver.samples is not None:
-            sampled_trajectories = self.solver.samples[1]
-            if self.sampled_trajectories_render is None:
-                self.sampled_trajectories_render = [None] * len(
-                    sampled_trajectories // 100
-                )
-            for idx in range(0, len(sampled_trajectories), 100):
-                sampled_xy = sampled_trajectories[idx][:, :2]
-                if self.sampled_trajectories_render[idx] is None:
-                    self.sampled_trajectories_render[idx] = e.render_lines(
-                        sampled_xy, color=ORANGE, size=4
-                    )
-                else:
-                    self.sampled_trajectories_render[idx].setData(
-                        sampled_xy[:, 0], sampled_xy[:, 1]
-                    )

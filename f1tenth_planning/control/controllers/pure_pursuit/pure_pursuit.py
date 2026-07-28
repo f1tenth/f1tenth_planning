@@ -69,50 +69,6 @@ class PurePursuitPlanner(Controller):
         self.control_solution = None
         self.local_plan = None
 
-        self.control_solution_renderer = None
-        self.local_plan_render = None
-
-    def render_control_solution(self, e):
-        """
-        Callback to render the lookahead point on the environment.
-
-        Args:
-            e: The environment renderer instance used for drawing.
-        """
-        if self.lookahead_point is not None:
-            self.control_solution = self.lookahead_point[:2][None]  # shape (1, 2)
-            if self.control_solution_renderer is None:
-                self.control_solution_renderer = e.render_points(
-                    self.control_solution, color=(128, 0, 0), size=4
-                )
-            else:
-                self.control_solution_renderer.setData(self.control_solution)
-
-    def render_local_plan(self, e):
-        """
-        Render the local plan (series of waypoints) on the environment.
-
-        Args:
-            e: The environment renderer instance used for drawing.
-        """
-        if self.target_index is not None:
-            end_index = self.target_index + 10
-            if end_index > self.waypoints.shape[0]:
-                self.local_plan = np.vstack(
-                    (
-                        self.waypoints[self.target_index :, :2],
-                        self.waypoints[: end_index % self.waypoints.shape[0], :2],
-                    )
-                )
-            else:
-                self.local_plan = self.waypoints[self.target_index : end_index, :2]
-            if self.local_plan_render is None:
-                self.local_plan_render = e.render_closed_lines(
-                    self.local_plan, color=(0, 0, 128), size=1
-                )
-            else:
-                self.local_plan_render.setData(self.local_plan)
-
     def _get_current_waypoint(self, lookahead_distance, position, theta):
         """
         Finds the current waypoint on the lookahead circle intersection.

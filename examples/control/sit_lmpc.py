@@ -5,6 +5,8 @@ from f1tenth_gym.envs import F110Env
 from f1tenth_planning.control import SITLMPCPlanner, NonlinearDynamicMPPIPlanner
 
 
+from render_helpers import make_render_callbacks
+
 def main():
     env: F110Env = gym.make(
         "f1tenth_gym:f1tenth-v0",
@@ -19,9 +21,8 @@ def main():
 
     base_controller = NonlinearDynamicMPPIPlanner(track=env.unwrapped.track)
     planner = SITLMPCPlanner(track=env.unwrapped.track, base_controller=base_controller)
-    env.unwrapped.add_render_callback(planner.render_waypoints)
-    env.unwrapped.add_render_callback(planner.render_local_plan)
-    env.unwrapped.add_render_callback(planner.render_control_solution)
+    for callback in make_render_callbacks(planner):
+        env.unwrapped.add_render_callback(callback)
 
     poses = np.array(
         [

@@ -7,6 +7,22 @@ from f1tenth_planning.control.config.dynamics_config import DynamicsConfig
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
 
 class Controller(ABC):
+    """Base class for all controllers.
+
+    A controller maps an observation to an actuation command. There is deliberately
+    **one** Controller type (DESIGN.md §2): a controller that tracks a raceline, one
+    that reacts to a laser scan, and one that learns a safe set across laps are all
+    Controllers -- holding a reference, reading sensors and learning are internal
+    implementation details, not separate kinds of controller.
+
+    Rendering is **not** part of this interface (DESIGN.md §9). Controllers expose
+    what they computed as plain attributes (``waypoints``, ``local_plan``,
+    ``control_solution``, and for the MPC family ``ref_traj`` / ``x_pred`` /
+    ``u_pred``); the caller draws whatever it wants from those. See
+    ``examples/control/`` for render callbacks. Keeping the visualiser out of the
+    library also keeps the library independent of any particular renderer API.
+    """
+
     @abstractmethod
     def __init__(self, track: Track, params: DynamicsConfig, control_mode : tuple[SteerActionEnum, LongitudinalActionEnum]) -> None:
         """
@@ -14,14 +30,14 @@ class Controller(ABC):
 
         Args:
             track (Track): track object with raceline
-            params (dict | str, optional): dictionary or path to yaml with controller-specific parameters
+            params (DynamicsConfig): vehicle parameters used by this controller
+            control_mode (tuple): the (steering, longitudinal) action semantics this
+                controller emits. The caller must configure the environment to match.
         """
         self.track = track
         self.params = params
         self.control_mode = control_mode
         self.waypoints = None
-        self.waypoint_render = None
-        self._waypoints_color = (0, 128, 0)
 
     @abstractmethod
     def plan(self, state: dict, waypoints: np.ndarray = None, **kwargs) -> np.ndarray:
@@ -34,36 +50,6 @@ class Controller(ABC):
             **kwargs: additional arguments for the controller. This can be used to update controller parameters.
 
         Returns:
-            np.ndarray: control action as (steering_angle, speed)
+            np.ndarray: control action, in the units declared by `control_mode`.
         """
         raise NotImplementedError("control method not implemented")
-
-    @property
-    def waypoints_color(self) -> tuple[int, int, int]:
-        """
-        Color as rgb tuple used for rendering waypoints (global plan).
-
-        For example, we can visualize trajectories of different colors for different agents by changing this color.
-        """
-        return self._waypoints_color
-
-    @waypoints_color.setter
-    def waypoints_color(self, value: tuple[int, int, int]) -> None:
-        """
-        Set color as rgb tuple used for rendering waypoints (global plan).
-        """
-        assert len(value) == 3, f"color must be a tuple of length 3, got {value}"
-        self._waypoints_color = value
-
-    def render_waypoints(self, e):
-        """
-        Callback to render waypoints.
-        """
-        if self.waypoints is not None:
-            points = self.waypoints[:, :2]
-            if self.waypoint_render is None:
-                self.waypoint_render = e.render_closed_lines(
-                    points, color=self.waypoints_color, size=1
-                )
-            else:
-                self.waypoint_render.setData(points)
