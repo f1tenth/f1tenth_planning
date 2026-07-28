@@ -8,7 +8,7 @@ authors = [
     { name = "Luigi Berducci" },
     { name = "Ahmad Amine" },
 ]
-requires-python = ">=3.9,<=3.13"
+requires-python = ">=3.10,<3.14"
 readme = "README.md"
 license = "MIT"
 maintainers = [{ name = "Hongrui Zheng" }]
@@ -41,3 +41,17 @@ packages = ["f1tenth_planning"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra"
+# Only collect from tests/ -- never from inside the package.
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end simulation runs (deselect with '-m \"not slow\"')",
+]
