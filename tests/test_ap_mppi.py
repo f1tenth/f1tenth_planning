@@ -156,3 +156,37 @@ def test_ap_mppi_tuning_change_takes_effect():
     assert not np.allclose(np.asarray(u_before), np.asarray(u_after)), (
         "temperature change had no effect -- it is baked into the trace"
     )
+
+
+def test_u_std_controls_the_sampling_scale():
+    """`u_std` must actually set the exploration standard deviation.
+
+    jax.random.truncated_normal draws a *standard* normal and takes no scale
+    argument, so without explicit scaling the exploration std is ~1.0 in every
+    control dimension no matter what the config says -- making the only way to
+    change sampling scale a change of the actuator bounds.
+    """
+    from f1tenth_planning.control.config.controller_config import dynamic_mppi_config
+
+    params = f1tenth_params()
+    measured = {}
+    for std in (0.1, 0.5, 2.0):
+        cfg = dynamic_mppi_config()
+        cfg.N, cfg.n_samples, cfg.n_iterations = 10, 2048, 1
+        cfg.u_min = np.array([params.MIN_DSTEER, params.MIN_ACCEL])
+        cfg.u_max = np.array([params.MAX_DSTEER, params.MAX_ACCEL])
+        cfg.u_std = std
+
+        solver = MPPISolver(cfg, DynamicBicycleModel(params))
+        x0 = np.array([0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0])
+        ref = np.tile(x0.reshape(-1, 1), (1, cfg.N + 1))
+        ref[3, :] = 5.0
+        solver.solve(x0, ref, vis=False)
+
+        actions, _, _ = solver.samples
+        measured[std] = float(jnp.std(actions[:, :, 1]))
+
+    for std, got in measured.items():
+        assert got == pytest.approx(std, rel=0.15), (
+            f"u_std={std} produced sampling std {got:.3f}; u_std is not being applied"
+        )

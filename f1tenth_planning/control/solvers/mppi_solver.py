@@ -76,6 +76,26 @@ def _rollout_kernel(
     return (s, r)
 
 
+def _sample_perturbations(rng, a_opt, u_min, u_max, u_std, n_samples, N, nu):
+    """Sample control perturbations ~ N(0, u_std^2), truncated to the control bounds.
+
+    `jax.random.truncated_normal` draws from a *standard* normal truncated to
+    [lower, upper] -- it takes no scale argument. Scaling the bounds by u_std before
+    the draw and the samples by u_std after is what actually makes u_std the sampling
+    standard deviation; without it the exploration std is ~1.0 in every control
+    dimension no matter what the config says.
+
+    Truncating the *perturbation* against the current nominal also guarantees
+    a_opt + da stays inside the control bounds.
+    """
+    scale = jnp.maximum(jnp.asarray(u_std, dtype=jnp.float32), 1e-6)
+    lower = (u_min - a_opt) / scale
+    upper = (u_max - a_opt) / scale
+    return scale * jax.random.truncated_normal(
+        rng, lower=lower, upper=upper, shape=(n_samples, N, nu)
+    )
+
+
 @partial(jax.jit, static_argnames=("N",))
 def _returns_kernel(r, *, N):
     """Reward-to-go: R[i] = sum_{j>=i} r[j]."""
@@ -105,21 +125,14 @@ def _weights_kernel(returns, temperature, damping):
 def _iteration_kernel(
     a_opt, a_cov, rng,                                  # carry   (traced)
     x0, ref_traj, p, Q, R,                              # problem (traced)
-    u_min, u_max, temperature, damping, dt,             # tuning  (traced)
+    u_min, u_max, temperature, damping, dt, u_std,      # tuning  (traced)
     *,
     N, n_samples, nu, scan, adaptive_cov, step_fn, reward_fn,   # structural (static)
 ):
     """One MPPI iteration: sample, roll out, weight, update the nominal control."""
     rng_da, rng = jax.random.split(rng)
 
-    # Truncating the *perturbation* by the current nominal guarantees a = a_opt + da
-    # lands inside the control bounds.
-    da = jax.random.truncated_normal(
-        rng_da,
-        lower=u_min - a_opt,
-        upper=u_max - a_opt,
-        shape=(n_samples, N, nu),
-    )
+    da = _sample_perturbations(rng_da, a_opt, u_min, u_max, u_std, n_samples, N, nu)
     a = jnp.clip(a_opt + da, u_min, u_max)  # [n_samples, N, nu]
 
     rollout = partial(
@@ -252,6 +265,7 @@ class MPPISolver(MPCSolver):
             x0, ref_traj, p, Q, R,
             self.config.u_min, self.config.u_max,
             self.config.temperature, self.config.damping, self.config.dt,
+            self.config.u_std,
             **self._static_kwargs(),
         )
 

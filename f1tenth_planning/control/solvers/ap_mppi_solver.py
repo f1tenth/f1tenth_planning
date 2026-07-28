@@ -9,6 +9,7 @@ from f1tenth_planning.control.solvers.mppi_solver import (
     MPPISolver,
     _returns_kernel,
     _rollout_kernel,
+    _sample_perturbations,
     _weights_kernel,
 )
 
@@ -23,7 +24,7 @@ from f1tenth_planning.control.solvers.mppi_solver import (
 def _ap_iteration_kernel(
     a_opt, a_cov, rng,                                  # carry   (traced)
     x0, ref_traj, p, Q, R,                              # problem (traced)
-    u_min, u_max, temperature, damping, dt, lambdas,    # tuning  (traced)
+    u_min, u_max, temperature, damping, dt, u_std, lambdas,   # tuning  (traced)
     *,
     N, n_samples, nu, scan, adaptive_cov,
     step_fn, reward_fn, constraints_fn,                 # structural (static)
@@ -41,12 +42,7 @@ def _ap_iteration_kernel(
     """
     rng_da, rng = jax.random.split(rng)
 
-    da = jax.random.truncated_normal(
-        rng_da,
-        lower=u_min - a_opt,
-        upper=u_max - a_opt,
-        shape=(n_samples, N, nu),
-    )
+    da = _sample_perturbations(rng_da, a_opt, u_min, u_max, u_std, n_samples, N, nu)
     a = jnp.clip(a_opt + da, u_min, u_max)  # [n_samples, N, nu]
 
     rollout = partial(
@@ -216,6 +212,6 @@ class APMPPISolver(MPPISolver):
             x0, ref_traj, p, Q, R,
             self.config.u_min, self.config.u_max,
             self.config.temperature, self.config.damping, self.config.dt,
-            self.lambdas,
+            self.config.u_std, self.lambdas,
             **self._static_kwargs(),
         )
