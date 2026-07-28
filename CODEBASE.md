@@ -1,5 +1,25 @@
 # f1tenth_planning — Codebase Reference
 
+> **PARTLY SUPERSEDED — read [DESIGN.md](DESIGN.md) alongside this.**
+>
+> This describes the codebase as it stood on `dev-sit-lmpc` (`f751e7e`), *before* the
+> API redesign. It is still the best reference for the algorithms, the dynamics
+> equations, the solver formulations and the gym interface — none of which changed in
+> substance. The **API sections are out of date** on `dev-api-redesign`:
+>
+> | Described here | Actually now |
+> |---|---|
+> | `controller.plan(state, waypoints=...)` | `controller.compute_control(state)`; the reference is set via `controller.update(reference=...)` |
+> | controllers own `render_*` methods | rendering lives with the caller (`examples/control/render_helpers.py`) |
+> | `pre_processing_fn` bridges 7-state to 5-state | models declare `STATE_NAMES`; `model.state.idx.v` replaces hardcoded indices |
+> | MPPI kernels read config off a static `self` | module-level kernels with `static_argnames`; tuning values are traced and changeable at runtime |
+> | `APMPPISolver` duplicates `MPPISolver` | it inherits from it |
+> | planning modules unimportable | `LatticePlanner`/`LaneSwitcher` are `Planner`s; FGM/wall-follow are `Controller` stubs |
+> | no first-party tests | 77 tests plus CI (`tests/`, `.github/workflows/ci.yml`) |
+>
+> The §11 bug catalogue is likewise historical — many entries are now fixed; see the
+> branch history and [BUGS_FINDINGS.md](BUGS_FINDINGS.md).
+
 > Canonical orientation doc for this repo. Written against branch `dev-sit-lmpc` (HEAD `f751e7e`). Line numbers are accurate as of that commit; treat them as strong hints, not guarantees, after any refactor.
 
 ---
