@@ -20,6 +20,9 @@ class NonlinearMPCSolver(MPCSolver):
         ipopt_opts (dict, optional): options for the IPOPT solver
     """
 
+    # Builds a CasADi NLP from the symbolic dynamics.
+    REQUIRED_BACKENDS = ("casadi",)
+
     def __init__(
         self,
         config: MPCConfig,

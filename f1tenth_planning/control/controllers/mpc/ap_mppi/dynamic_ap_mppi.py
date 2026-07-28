@@ -111,7 +111,6 @@ class DynamicAPMPPIPlanner(MPCController):
         config: AP-MPPI configuration. If None, creates default with state limit constraints
             and bounds from vehicle parameters. Pass your own config to customize.
         solver: AP-MPPI solver. If None, creates from config and model.
-        pre_processing_fn: Optional preprocessing function for observations.
         use_state_limits: Whether to automatically add state limit constraints (only when config is None).
         ref_velocity_bounds: (v_min, v_max) for reference trajectory clipping. If None, uses config.x_min/x_max[3].
     """
@@ -123,7 +122,6 @@ class DynamicAPMPPIPlanner(MPCController):
         model: DynamicsModel = None,
         config: APMPPIConfig = None,
         solver: APMPPISolver = None,
-        pre_processing_fn=None,
         use_state_limits: bool = True,
         ref_velocity_bounds=None,
     ):
@@ -137,7 +135,6 @@ class DynamicAPMPPIPlanner(MPCController):
             config (APMPPIConfig, optional): AP-MPPI configuration. If None, creates default with state limit
                 constraints and bounds from vehicle parameters. Pass your own config to customize bounds.
             solver (APMPPISolver, optional): AP-MPPI solver. If None, creates from config and model.
-            pre_processing_fn (callable, optional): Optional preprocessing function for observations.
             use_state_limits (bool, optional): Whether to automatically add state limit constraints
                 from vehicle parameters. Only used when config is None. Defaults to True.
             ref_velocity_bounds (tuple[float, float], optional): (v_min, v_max) bounds for clipping
@@ -201,6 +198,5 @@ class DynamicAPMPPIPlanner(MPCController):
             solver,
             model,
             params,
-            pre_processing_fn,
             ref_velocity_bounds,
         )

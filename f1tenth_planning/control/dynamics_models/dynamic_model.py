@@ -25,10 +25,13 @@ class DynamicBicycleModel(DynamicsModel):
         DynamicsConfig: DynamicsConfig - vehicle dynamics configuration
     """
 
+    STATE_NAMES = ("x", "y", "delta", "v", "yaw", "yaw_rate", "beta")
+    CONTROL_NAMES = ("delta_v", "a")
+
     def __init__(self, params: DynamicsConfig):
         super().__init__(params)
-        self.nx = 7
-        self.nu = 2
+        self.nx = len(self.STATE_NAMES)
+        self.nu = len(self.CONTROL_NAMES)
 
     def f(
         self, state: dict, control: np.ndarray, params: DynamicsConfig = None
@@ -409,73 +412,3 @@ class DynamicBicycleModel(DynamicsModel):
             9.81,  # gravity
         ]
         return len(active_params)
-
-    def linearize_around_state(
-        self, state: np.ndarray, control: np.ndarray, params: DynamicsConfig = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        raise NotImplementedError(
-            "Linearization not implemented for dynamic model yet."
-        )
-        x, y, delta, v, yaw, yaw_rate, slip_angle = state
-        delta_v, a = control
-
-        # State (or system) matrix A, 7x7
-        A = np.zeros((self.nx, self.nx))
-
-        # dx/dstate
-        A[0, 3] = np.cos(yaw + slip_angle)  # dx/d(v)
-        A[0, 4] = -v * np.sin(yaw + slip_angle)  # dx/d(yaw)
-        A[0, 6] = -v * np.sin(yaw + slip_angle)  # dx/d(slip_angle)
-
-        # dy/dstate
-        A[1, 3] = np.sin(yaw + slip_angle)  # dy/d(v)
-        A[1, 4] = v * np.cos(yaw + slip_angle)  # dy/d(yaw)
-        A[1, 6] = v * np.cos(yaw + slip_angle)  # dy/d(slip_angle)
-
-        if np.abs(v) <= 0.1:
-            # dyaw/dstate
-            A[4, 2] = (
-                v
-                * np.cos(slip_angle)
-                / self.params.WHEELBASE
-                * (1 / np.cos(delta) ** 2)
-            )  # dyaw/ddelta
-            A[4, 3] = (
-                np.cos(slip_angle) / self.params.WHEELBASE * np.tan(delta)
-            )  # dyaw/dv
-            A[4, 6] = (
-                -v * np.sin(slip_angle) / self.params.WHEELBASE * np.tan(delta)
-            )  # dyaw/dslip_angle
-
-            # ddyaw/dstate (self.params.LR * delta_v) / (self.params.WHEELBASE * np.cos(delta) ** 2 * (1 + (np.tan(delta) * self.params.LR / self.params.WHEELBASE) ** 2))
-            A[5, 2] = (self.params.LR * delta_v) / (
-                self.params.WHEELBASE
-                * np.cos(delta) ** 2
-                * (1 + (np.tan(delta) * self.params.LR / self.params.WHEELBASE) ** 2)
-            )  # ddyaw/ddelta
-
-            pass
-        else:
-            # Extract params for more readable equations
-            mu = self.params.MU
-            m = self.params.M
-            I = self.params.I
-            lr = self.params.LR
-            lf = self.params.LF
-            C_Sf = self.params.C_SF
-            C_Sr = self.params.C_SR
-            h = self.params.H
-            g = 9.81
-
-            # dyaw/dstate
-            A[4, 5] = 1
-
-            # ddyaw/dstate
-
-            pass
-
-        B = np.zeros((self.nx, self.nu))
-        B[2, 0] = 1
-        B[3, 1] = 1
-
-        return A, B

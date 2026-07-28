@@ -6,8 +6,36 @@ from jax import numpy as jnp
 import numpy as np
 import casadi as ca
 from f1tenth_planning.control.config.dynamics_config import DynamicsConfig
+from f1tenth_planning.control.spec import OBSERVATION_KEY_FOR_STATE, VariableSpec
 
 class DynamicsModel(ABC):
+    """Base class for vehicle dynamics models.
+
+    **Backends are opt-in** (DESIGN.md §5.1). A model implements only the backends
+    its solvers need -- a jax-only learned model implements ``f_jax`` and nothing
+    else. Use :meth:`backends` / :meth:`supports` to query what a model provides;
+    solvers validate their requirements at construction rather than failing deep
+    inside a solve.
+
+    **Layouts are self-describing** (DESIGN.md §5.2). Subclasses declare
+    ``STATE_NAMES`` and ``CONTROL_NAMES``; generic code then addresses variables by
+    name via ``model.state.idx.<name>`` instead of hardcoding vector positions.
+    """
+
+    #: Names of the state variables, in vector order. Subclasses must set this.
+    STATE_NAMES: tuple[str, ...] = ()
+    #: Names of the control variables, in vector order. Subclasses must set this.
+    CONTROL_NAMES: tuple[str, ...] = ()
+
+    #: Backend keys understood by :meth:`backends`, mapped to the defining method.
+    _BACKEND_METHODS = {
+        "numpy": "f",
+        "jax": "f_jax",
+        "casadi": "f_casadi",
+        "casadi_opti": "f_casadi_opti",
+        "jacobian": "linearize_around_state",
+    }
+
     @abstractmethod
     def __init__(self, params: DynamicsConfig) -> None:
         """
@@ -18,6 +46,75 @@ class DynamicsModel(ABC):
         """
         self.params = params
 
+    # ------------------------------------------------------------------ layouts
+    @property
+    def state(self) -> VariableSpec:
+        """Named layout of the state vector (``model.state.idx.v`` -> index)."""
+        spec = getattr(self, "_state_spec", None)
+        if spec is None:
+            if not self.STATE_NAMES:
+                raise NotImplementedError(
+                    f"{type(self).__name__} does not declare STATE_NAMES"
+                )
+            spec = VariableSpec(self.STATE_NAMES)
+            self._state_spec = spec
+        return spec
+
+    @property
+    def control(self) -> VariableSpec:
+        """Named layout of the control vector (``model.control.idx.a`` -> index)."""
+        spec = getattr(self, "_control_spec", None)
+        if spec is None:
+            if not self.CONTROL_NAMES:
+                raise NotImplementedError(
+                    f"{type(self).__name__} does not declare CONTROL_NAMES"
+                )
+            spec = VariableSpec(self.CONTROL_NAMES)
+            self._control_spec = spec
+        return spec
+
+    def state_from_observation(self, observation: dict) -> np.ndarray:
+        """Assemble this model's state vector from a gym observation dict.
+
+        Each model pulls exactly the fields its own layout names, so a 5-state
+        kinematic model and a 7-state dynamic model both build correctly from the
+        same observation -- no shared-prefix slicing and no pre-processing hook.
+        """
+        values = []
+        for name in self.state.names:
+            key = OBSERVATION_KEY_FOR_STATE.get(name)
+            if key is None:
+                raise KeyError(
+                    f"state variable {name!r} cannot be read from an observation; "
+                    f"override state_from_observation in {type(self).__name__}"
+                )
+            if key not in observation:
+                raise KeyError(
+                    f"observation is missing {key!r} (needed for state {name!r}); "
+                    f"available keys: {sorted(observation)}"
+                )
+            values.append(observation[key])
+        return np.array(values, dtype=float)
+
+    # ------------------------------------------------------------- capabilities
+    @classmethod
+    def backends(cls) -> set[str]:
+        """Which backends this model actually implements.
+
+        Detected by checking which methods the subclass overrides, so a model that
+        simply does not define ``f_casadi`` reports no casadi support.
+        """
+        provided = set()
+        for key, method in cls._BACKEND_METHODS.items():
+            if getattr(cls, method, None) is not getattr(DynamicsModel, method, None):
+                provided.add(key)
+        return provided
+
+    @classmethod
+    def supports(cls, *required: str) -> bool:
+        """True if every named backend is implemented by this model."""
+        return set(required).issubset(cls.backends())
+
     def f(self, state: np.ndarray, control: np.ndarray, params: DynamicsConfig = None) -> np.ndarray:
         """
         (Non-)linear dynamics model. This function computes the state derivative given the current state and control input. Should be 
@@ -25,7 +122,7 @@ class DynamicsModel(ABC):
         should be handled externally.
         
         Mathematically:
-            \dot{x} = f(x, u)
+            \\dot{x} = f(x, u)
 
         Args:
             state (np.ndarray): observation as returned from the environment.
@@ -45,7 +142,7 @@ class DynamicsModel(ABC):
         CasADi function that can be used to compute the state derivative.
         
         Mathematically:
-            \dot{x} = f(x, u)
+            \\dot{x} = f(x, u)
         
         Args:
             params (DynamicsConfig): vehicle dynamics parameters, overwrites self.params if not None
@@ -75,7 +172,7 @@ class DynamicsModel(ABC):
         should be handled externally.
         
         Mathematically:
-            \dot{x} = f(x, u)
+            \\dot{x} = f(x, u)
 
         Args:
             state (jnp.ndarray): observation as returned from the environment.

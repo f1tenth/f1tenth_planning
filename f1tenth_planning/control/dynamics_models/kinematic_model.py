@@ -8,13 +8,6 @@ import numpy as np
 import casadi as ca
 
 
-def _extract_kinematic_state(x0, xref):
-    """Ensure that the states correspond to the kinematic model states."""
-    # Extract first 5 states: [x, y, steering_angle, vx, yaw], assuming full state is
-    # [x, y, steering_angle, vx, yaw, yaw_rate, slip_angle]
-    return x0[:5], xref[:5, :]
-
-
 class KinematicBicycleModel(DynamicsModel):
     """
     Kinematic bicycle model for vehicle dynamics.
@@ -31,10 +24,13 @@ class KinematicBicycleModel(DynamicsModel):
         DynamicsConfig: DynamicsConfig - vehicle dynamics configuration
     """
 
+    STATE_NAMES = ("x", "y", "delta", "v", "yaw")
+    CONTROL_NAMES = ("delta_v", "a")
+
     def __init__(self, params: DynamicsConfig):
         super().__init__(params)
-        self.nx = 5
-        self.nu = 2
+        self.nx = len(self.STATE_NAMES)
+        self.nu = len(self.CONTROL_NAMES)
 
     def f(
         self, state: dict, control: np.ndarray, params: DynamicsConfig = None

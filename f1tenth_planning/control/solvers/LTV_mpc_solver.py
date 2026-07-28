@@ -18,6 +18,9 @@ class LTVMPCSolver(MPCSolver):
     Formulates and solves a Linear Time-Varying Model Predictive Control (LTV-MPC) problem for a time-varying or nonlinear system tracking a reference trajectory. The system dynamics are linearized around the current trajectory at each timestep, and the resulting finite-horizon optimal control problem is solved using CVXPY.
     """
 
+    # Linearises the model each tick, so it needs numpy dynamics AND a Jacobian.
+    REQUIRED_BACKENDS = ("numpy", "jacobian")
+
     def __init__(
         self,
         config: MPCConfig,

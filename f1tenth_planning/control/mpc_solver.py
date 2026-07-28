@@ -7,12 +7,34 @@ from f1tenth_planning.control.dynamics_model import DynamicsModel
 class MPCSolver(ABC):
     """
     Abstract base class for Model Predictive Control (MPC) solvers. Implemented MPC solvers should inherit from this class and implement all abstract methods for plug-and-play compatibility with MPC controllers.
+
+    Subclasses declare which model backends they need via :attr:`REQUIRED_BACKENDS`;
+    the requirement is checked at construction so an incompatible model+solver pair
+    fails immediately with a clear message instead of raising ``NotImplementedError``
+    from deep inside a solve (DESIGN.md §5.1).
     """
+
+    #: Model backends this solver needs, e.g. ``("casadi",)`` or ``("numpy", "jacobian")``.
+    REQUIRED_BACKENDS: tuple[str, ...] = ()
 
     @abstractmethod
     def __init__(self, config: MPCConfig, model: DynamicsModel):
+        self._require_backends(model)
         self.config = config
         self.model = model
+
+    @classmethod
+    def _require_backends(cls, model: DynamicsModel) -> None:
+        """Fail fast if `model` cannot supply what this solver needs."""
+        if not cls.REQUIRED_BACKENDS:
+            return
+        missing = sorted(set(cls.REQUIRED_BACKENDS) - model.backends())
+        if missing:
+            raise TypeError(
+                f"{cls.__name__} requires model backend(s) {missing}, but "
+                f"{type(model).__name__} only provides {sorted(model.backends())}. "
+                f"Either use a different model or implement the missing method(s)."
+            )
 
     @abstractmethod
     def update(self, x0, ref_traj, p=None, Q=None, R=None, P=None, Rd=None):

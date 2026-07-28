@@ -9,7 +9,28 @@ from f1tenth_planning.control.config.dynamics_config import (
 from f1tenth_planning.control.mpc_solver import MPCSolver
 from f1tenth_planning.control.dynamics_model import DynamicsModel
 from f1tenth_gym.envs.action import SteerActionEnum, LongitudinalActionEnum
+from f1tenth_planning.control.spec import RACELINE_ATTR_FOR_STATE
 from f1tenth_planning.utils.utils import jnp_to_np
+
+
+def reference_waypoints_for_model(track: Track, model: DynamicsModel) -> np.ndarray:
+    """Build an (N_waypoints, nx) reference matrix in `model`'s state layout.
+
+    Columns are matched to the raceline **by variable name**, so adding a model with a
+    different state vector needs no change here. Names the raceline does not carry
+    (steering angle, yaw rate, slip angle) are zero-filled.
+    """
+    raceline = track.raceline
+    n = len(raceline.xs)
+    columns = []
+    for name in model.state.names:
+        attr = RACELINE_ATTR_FOR_STATE.get(name)
+        values = getattr(raceline, attr, None) if attr else None
+        if values is None:
+            columns.append(np.zeros(n))
+        else:
+            columns.append(np.asarray(values, dtype=float))
+    return np.vstack(columns).T
 
 
 class MPCController(Controller):
@@ -24,11 +45,14 @@ class MPCController(Controller):
         model (DynamicsModel): dynamics model object, contains the vehicle dynamics
         params (DynamicsConfig, optional): Vehicle parameters for the model. If none,
             default f1tenth_params() will be used.
-        pre_processing_fn (function, optional): Function to preprocess the state and reference trajectory before calling the solver.
-            Should take in (x0, xref) and return processed (x0, xref). If none, no preprocessing is done.
         ref_velocity_bounds (tuple[float, float], optional): (v_min, v_max) bounds for clipping reference trajectory velocities.
-            If None, uses solver's x_min[3] and x_max[3]. Use this to set operational speed limits
-            that differ from the physical limits used by the solver for rollout clipping.
+            If None, uses the solver's state bounds at the model's velocity index. Use
+            this to set operational speed limits that differ from the physical limits
+            used by the solver for rollout clipping.
+
+    The waypoint matrix and the initial state are both built in the *model's* state
+    layout (DESIGN.md §5.2), so a 5-state kinematic model and a 7-state dynamic model
+    are handled by the same code with no slicing hook.
     """
 
     def __init__(
@@ -36,36 +60,29 @@ class MPCController(Controller):
         track: Track,
         solver: MPCSolver,
         model: DynamicsModel,
-        params: DynamicsConfig = f1tenth_params(),
-        pre_processing_fn=None,
+        params: DynamicsConfig = None,
         ref_velocity_bounds=None,
     ):
+        if params is None:
+            params = f1tenth_params()
         super().__init__(
             track,
             params,
             control_mode=(SteerActionEnum.Steering_Speed, LongitudinalActionEnum.Accl),
         )
-        self.waypoints = np.vstack(
-            [
-                track.raceline.xs,  # x
-                track.raceline.ys,  # y
-                np.zeros_like(track.raceline.xs),  # steering angle reference
-                track.raceline.vxs,  # v
-                track.raceline.yaws,  # yaw
-                np.zeros_like(track.raceline.xs),  # yaw rate reference
-                np.zeros_like(track.raceline.xs),  # slip angle
-            ]
-        ).T
-
         self.model = model
         self.solver = solver
 
-        self.pre_processing_fn = pre_processing_fn
+        # Reference waypoints in the model's own state layout: each column is the
+        # raceline field that matches the state variable's name, zeros where the
+        # raceline carries nothing for it (e.g. steering angle, yaw rate, slip).
+        self.waypoints = reference_waypoints_for_model(track, model)
 
         # Reference velocity bounds (for clipping reference trajectory)
+        v_idx = model.state.index("v")
         if ref_velocity_bounds is None:
-            self.ref_v_min = self.solver.config.x_min[3]
-            self.ref_v_max = self.solver.config.x_max[3]
+            self.ref_v_min = self.solver.config.x_min[v_idx]
+            self.ref_v_max = self.solver.config.x_max[v_idx]
         else:
             self.ref_v_min, self.ref_v_max = ref_velocity_bounds
 
@@ -161,16 +178,18 @@ class MPCController(Controller):
                     f"R must be of shape {self.solver.config.R.shape}, got {R.shape}"
                 )
 
+        # The model assembles its own state vector from the observation, so this works
+        # for any state layout (5-state kinematic, 7-state dynamic, ...).
+        x0 = self.model.state_from_observation(state)
+
+        idx = self.model.state.idx
         x = state["pose_x"]
         y = state["pose_y"]
-        v = state["linear_vel_x"]
         yaw = state["pose_theta"]
-        # x0 of shape (nx,)
-        x0 = np.array([x, y, state["delta"], v, yaw, state["ang_vel_z"], state["beta"]])
 
-        cx = self.waypoints[:, 0]
-        cy = self.waypoints[:, 1]
-        cv = self.waypoints[:, 3]
+        cx = self.waypoints[:, idx.x]
+        cy = self.waypoints[:, idx.y]
+        cv = self.waypoints[:, idx.v]
 
         # Clip the reference velocity to the operational speed limits
         # --> Ensures that the interpolated trajectory does not assume
@@ -192,9 +211,6 @@ class MPCController(Controller):
         if params is not None:
             p = self.model.parameters_vector_from_config(params)
             self.params = params
-
-        if self.pre_processing_fn is not None:
-            x0, self.ref_traj = self.pre_processing_fn(x0, self.ref_traj)
 
         self.x_pred, self.u_pred = self.solver.solve(x0, self.ref_traj, p=p, Q=Q, R=R)
         self.x_pred = jnp_to_np(self.x_pred)

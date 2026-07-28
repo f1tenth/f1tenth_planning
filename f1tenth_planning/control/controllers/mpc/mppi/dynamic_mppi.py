@@ -33,7 +33,6 @@ class DynamicMPPIPlanner(MPCController):
         model: DynamicsModel = None,
         config: MPCConfig = None,
         solver: MPPISolver = None,
-        pre_processing_fn=None,
     ):
         print("Initiailizing Dynamic MPPI Planner (convenience class)")
         if not isinstance(solver, MPPISolver) and solver is not None:
@@ -89,7 +88,6 @@ class DynamicMPPIPlanner(MPCController):
             solver,
             model,
             params,
-            pre_processing_fn,
         )
         self.sampled_trajectories_render = None
 

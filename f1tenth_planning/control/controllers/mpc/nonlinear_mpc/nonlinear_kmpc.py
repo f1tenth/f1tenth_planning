@@ -5,7 +5,6 @@ from f1tenth_planning.control.config.controller_config import (
 )
 from f1tenth_planning.control.dynamics_models.kinematic_model import (
     KinematicBicycleModel,
-    _extract_kinematic_state,
 )
 from f1tenth_planning.control.solvers.nonlinear_mpc_solver import NonlinearMPCSolver
 from f1tenth_planning.control.config.dynamics_config import (
@@ -24,7 +23,6 @@ class NonlinearKinematicMPCPlanner(MPCController):
         model: KinematicBicycleModel = None,
         config: MPCConfig = None,
         solver: NonlinearMPCSolver = None,
-        pre_processing_fn=None,
     ):
         """
         Convenience class that uses Nonlinear MPC solver with kinematic bicycle model.
@@ -43,8 +41,6 @@ class NonlinearKinematicMPCPlanner(MPCController):
             config = kinematic_mpc_config()
         if solver is None:
             solver = NonlinearMPCSolver(config=config, model=model)
-        if pre_processing_fn is None:
-            pre_processing_fn = _extract_kinematic_state
             # x = [x, y, delta, v, yaw]
             config.x_min = np.array(
                 [
@@ -82,5 +78,4 @@ class NonlinearKinematicMPCPlanner(MPCController):
             solver,
             model,
             params,
-            pre_processing_fn,
         )

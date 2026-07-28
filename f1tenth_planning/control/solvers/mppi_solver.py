@@ -58,6 +58,9 @@ class MPPISolver(MPCSolver):
         model (DynamicsModel): dynamics model object, used to compute the state derivative
     """
 
+    # Rolls out sampled trajectories under jax.vmap/jit.
+    REQUIRED_BACKENDS = ("jax",)
+
     def __init__(
         self,
         config: MPPIConfig,

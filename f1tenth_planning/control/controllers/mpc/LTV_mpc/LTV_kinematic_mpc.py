@@ -5,7 +5,6 @@ from f1tenth_planning.control.config.controller_config import (
 )
 from f1tenth_planning.control.dynamics_models.kinematic_model import (
     KinematicBicycleModel,
-    _extract_kinematic_state,
 )
 from f1tenth_planning.control.solvers.LTV_mpc_solver import LTVMPCSolver
 from f1tenth_planning.control.config.dynamics_config import (
@@ -23,7 +22,6 @@ class KinematicMPCPlanner(MPCController):
         model: KinematicBicycleModel = None,
         config: MPCConfig = None,
         solver: LTVMPCSolver = None,
-        pre_processing_fn=_extract_kinematic_state,
     ):
         """
         Convenience class that uses LTV MPC solver with kinematic bicycle model.
@@ -47,5 +45,4 @@ class KinematicMPCPlanner(MPCController):
             solver=solver,
             model=model,
             params=params,
-            pre_processing_fn=pre_processing_fn,
         )

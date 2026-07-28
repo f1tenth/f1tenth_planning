@@ -31,6 +31,9 @@ class APMPPISolver(MPCSolver):
         reward_function (function, optional): function of the form _reward(self, x, u, x_ref, Q, R) to compute the reward given current state, control input, reference state, Q, and R. This allows for custom reward functions that compute the reward given the current state, control input, reference state, Q, and R. If None, uses the default quadratic cost.
     """
 
+    # Rolls out sampled trajectories under jax.vmap/jit.
+    REQUIRED_BACKENDS = ("jax",)
+
     def __init__(
         self,
         config: APMPPIConfig,
