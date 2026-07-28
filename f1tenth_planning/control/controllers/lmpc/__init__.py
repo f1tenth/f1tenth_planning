@@ -44,7 +44,7 @@ class SITLMPCPlanner(LMPCController):
 
 __all__ = [
     "LMPCController",
-    "ITLMPCPlanner",
+    "SITLMPCPlanner",
     "SimpleSafeSetStore",
     "SimpleValueFunctionModel",
     "LMPCIterationManager",

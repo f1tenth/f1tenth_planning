@@ -51,39 +51,6 @@ def nearest_point(point, trajectory):
     )
 
 
-def calc_ref_trajectory_indices(x, y, cx, cy, v, dt, N):
-    """
-    Calcuate the indices of the reference trajectory for the next N steps based on the current velocity and the distance between waypoints in the reference trajectory.
-
-    Args:
-        x (float): current x position
-        y (float): current y position
-        v (float): current velocity
-        dt (float): time step
-        cx (numpy.ndarray): x positions of the reference trajectory waypoints
-        cy (numpy.ndarray): y positions of the reference trajectory waypoints
-    """
-
-    # Calculate the distance between waypoints in the reference trajectory
-    dl = np.linalg.norm(np.array([cx[1], cy[1]]) - np.array([cx[0], cy[0]]))
-
-    # Find the total number of waypoints in the reference trajectory
-    ncourse = len(cx)
-
-    # Find nearest index/setpoint from where the trajectories are calculated
-    _, _, _, ind = nearest_point(np.array([x, y]), np.array([cx, cy]).T)
-
-    # based on current velocity, distance traveled on the ref line between time steps
-    travel = abs(v) * dt
-    dind = travel / dl
-    ind_list = int(ind) + np.insert(np.cumsum(np.repeat(dind, N)), 0, 0).round().astype(
-        int
-    )
-    ind_list[ind_list >= ncourse] -= ncourse
-
-    return ind_list
-
-
 def calc_interpolated_reference_trajectory(
     x, y, yaw, cx, cy, cv, dt, N, reference_trajectory
 ):
@@ -352,32 +319,6 @@ Geometry utilities
 
 
 @njit(cache=True)
-def quat_2_rpy(x, y, z, w):
-    """
-    Converts a quaternion into euler angles (roll, pitch, yaw)
-
-    Args:
-        x, y, z, w (float): input quaternion
-
-    Returns:
-        r, p, y (float): roll, pitch yaw
-    """
-    t0 = 2.0 * (w * x + y * z)
-    t1 = 1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(t0, t1)
-
-    t2 = 2.0 * (w * y - z * x)
-    t2 = 1.0 if t2 > 1.0 else t2
-    t2 = -1.0 if t2 < -1.0 else t2
-    pitch = math.asin(t2)
-
-    t3 = 2.0 * (w * z + x * y)
-    t4 = 1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(t3, t4)
-    return roll, pitch, yaw
-
-
-@njit(cache=True)
 def get_rotation_matrix(theta):
     c, s = np.cos(theta), np.sin(theta)
     return np.ascontiguousarray(np.array([[c, -s], [s, c]]))
@@ -399,27 +340,6 @@ def sample_traj(clothoid, npts):
         traj[i, 3] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
 
     return traj
-
-
-def map_collision(point, map):
-    """
-    Returns whether a point is in collision with the map
-    """
-    pass
-
-
-def input_acceleration_to_speed(v0, acc, dt):
-    """
-    Returns the speed after applying acceleration for a given time
-    """
-    return v0 + acc * dt
-
-
-def input_steering_speed_to_angle(delta_0, delta_v, dt):
-    """
-    Returns the steering angle after applying steering velocity for a given time
-    """
-    return delta_0 + delta_v * dt
 
 
 def jnp_to_np(jnp_array):

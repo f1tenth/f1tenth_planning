@@ -1,6 +1,8 @@
 # f1tenth_planning — API Design
 
-> **Status:** proposal, agreed in discussion 2026-07-28. Nothing here is implemented yet.
+> **Status:** IMPLEMENTED on `dev-api-redesign`. Written as a proposal 2026-07-28 and
+> built out over the commits listed in §11; the build order there records what landed.
+> Where the implementation deviated from the proposal, the section says so.
 > Developed on branch `dev-api-redesign` (off `fix/correctness-pass` @ `9dd7bf1`, so the correctness
 > fixes come along). Companion to [CODEBASE.md](CODEBASE.md) (what exists today),
 > [BUGS_FINDINGS.md](BUGS_FINDINGS.md), and [DEADCODE_FINDINGS.md](DEADCODE_FINDINGS.md).
@@ -404,16 +406,16 @@ No backwards-compatibility constraint, so phases are ordered by **build dependen
 final form, updates the examples in the same commit, and is verified against the lap harness (§10)
 before the next starts.
 
-| Phase | Content | Depends on |
+| Phase | Content | Status |
 |---|---|---|
-| **0** | Test scaffolding first: lap-regression harness, cross-backend agreement test, and the trace-counting tests (§10.1–4), committed. The trace tests are expected to **fail** initially — they encode the §7.4 bug and become the acceptance criteria for Phase D | — |
-| **A** | State/control specs (§5.2) and capability queries (§5.1); retire `pre_processing_fn` and hardcoded indices | 0 |
-| **B** | Rendering removal (§9) — pure deletion, drops the gym-renderer coupling; examples grow render callbacks | 0 |
-| **C** | `Controller`/`Planner` ABCs in final form (§3–4): `compute_control()`, `reset()`, `complete_iteration()`, reference as hot input (§8) | A, B |
-| **D** | `update()` mechanism + solver parameter slots + **kill static-`self`** (§7) | C |
-| **E** | `APMPPISolver` ← `MPPISolver`; shared reference-tracking base (§6) | D |
-| **F** | AP-MPPI / SIT-LMPC: constraint no-op, adaptive penalty, safe set + value function | D, E |
-| **G** | `Planner` ABC firmed up; port lattice/lane-switcher; FGM / wall-follow | C |
+| **0** | Test scaffolding: lap-regression harness, cross-backend agreement, trace-counting | ✅ `7aea58f` |
+| **A** | State/control specs (§5.2), capability queries (§5.1); `pre_processing_fn` retired | ✅ `b9eb579` |
+| **B** | Rendering removed from the library; examples own their render callbacks | ✅ `2fe9306` |
+| **C** | `Controller`/`Planner` ABCs final: `compute_control()`, `update()`, lifecycle hooks | ✅ `05be620` |
+| **D** | Explicit jit args with `static_argnames`; static-`self` eliminated | ✅ `32b9b57` |
+| **E** | `APMPPISolver` inherits `MPPISolver` | ✅ `32b9b57` |
+| **F** | AP-MPPI: constraint no-op fixed (clip vs constrain), `u_std` made effective. **SIT-LMPC safe set + value function still outstanding** | ◐ `32b9b57`, `cc89174` |
+| **G** | lattice/lane-switcher ported to `Planner`; FGM/wall-follow are honest `Controller` stubs (**algorithms still to write**) | ◐ |
 
 **Phase 0 first is the point.** Zero first-party tests is the root cause of the bug count; landing
 the harness before the refactor is what makes every later phase verifiable instead of hopeful.

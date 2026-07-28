@@ -5,10 +5,16 @@ from argparse import Namespace
 import numpy as np
 import scipy.spatial
 
-from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
+from f1tenth_planning.planning.planner import Planner
+from f1tenth_planning.utils.utils import nearest_point
 
 
-class LaneSwitcher:
+class LaneSwitcher(Planner):
+    """Chooses between parallel lanes based on opponent occupancy.
+
+    Emits the selected lane as a **reference** for a controller to track; it does not
+    produce actuation itself (DESIGN.md §2).
+    """
     def __init__(self, conf, wb=0.33):
         self.wheelbase = wb
         self.v_scale = conf.traj_v_scale
@@ -70,10 +76,9 @@ class LaneSwitcher:
         pp_conf = Namespace(**pp_conf)
         pp_conf.wpt_path = conf.wpt_path
         pp_conf.map_path = conf.map_path
-        if conf.tracker == "advanced_pure_pursuit":
-            raise NotImplementedError
-        elif conf.tracker == "pure_pursuit":
-            self.tracker = PurePursuitPlanner(pp_conf)
+        # NOTE: this planner used to construct its own Pure Pursuit tracker. Under
+        # the current design a planner only emits a reference and the caller pairs it
+        # with a controller, so the tracker is gone (it was also never used).
         self.step = 0
 
         # Car Status Variables

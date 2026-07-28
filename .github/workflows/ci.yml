@@ -33,10 +33,8 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      # NOTE: the project currently declares `jax[cuda13]` as a hard dependency,
-      # which pulls several hundred MB of CUDA wheels that are useless on a CPU
-      # runner. JAX_PLATFORMS=cpu keeps the tests on CPU; making the CUDA extra
-      # optional in pyproject.toml is tracked as a follow-up.
+      # The base install is CPU-only jax; the CUDA build is the optional `gpu`
+      # extra, so CI does not download several hundred MB of unusable CUDA wheels.
       - name: Sync dependencies
         run: uv sync --group dev
 

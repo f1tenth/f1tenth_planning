@@ -23,9 +23,18 @@ dependencies = [
     "qdldl",
     "pyyaml",
     "f1tenth_gym",
-    "jax[cuda13]>=0.4.30",
+    "jax>=0.4.30",
     "casadi>=3.7.2",
+    # used by utils/solvers and the lattice planner respectively; previously imported
+    # but never declared, so a clean install could not run them
+    "scipy",
+    "pyclothoids",
 ]
+
+[project.optional-dependencies]
+# GPU build of jax. Opt in with `uv sync --extra gpu`; the base install stays CPU-only
+# so CI and non-NVIDIA machines are not forced to download the CUDA wheels.
+gpu = ["jax[cuda13]>=0.4.30"]
 
 [project.urls]
 Homepage = "https://f1tenth.org"

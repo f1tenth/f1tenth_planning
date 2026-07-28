@@ -1,8 +1,8 @@
-from typing import List, Callable
 import numpy as np
 import jax.numpy as jnp
 
 from f1tenth_gym.envs.track import Track
+
 from f1tenth_planning.control.controllers.mpc.mpc import MPCController
 from f1tenth_planning.control.config.dynamics_config import (
     DynamicsConfig,

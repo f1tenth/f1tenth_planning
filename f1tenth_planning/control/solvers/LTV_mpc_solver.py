@@ -245,24 +245,6 @@ class LTVMPCSolver(MPCSolver):
             self.uk.value = shifted_u
             return shifted_x, shifted_u
 
-    def predict_state(self, x0, u_traj):
-        """
-        Predict the system state for the next N steps using the model and control inputs.
-
-        Args:
-            x0 (np.ndarray): initial state of shape (nx,)
-            u_traj (np.ndarray): control input of shape (nu, N)
-        """
-        x = x0
-        traj_predict = np.zeros((self.config.nx, self.config.N + 1))
-        traj_predict[:, 0] = x0
-        for i in range(self.config.N):
-            x = self.discretizer(
-                self.model.f, x, u_traj[:, i], self.model.params, self.config.dt
-            )
-            traj_predict[:, i + 1] = x
-        return traj_predict
-
     def get_system_matrices(self, x, u):
         """
         Get the discretized, linearized system matrices for the current state and control input.

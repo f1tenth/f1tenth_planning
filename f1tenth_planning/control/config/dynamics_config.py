@@ -220,15 +220,3 @@ def fullscale_params():
     return _dynamics_config_from_gym_params(F110Env.fullscale_vehicle_params())
 
 
-def update_config_from_dict(self, config_dict):
-    """
-    Update the dynamics configuration object with new parameters from a dictionary.
-
-    Args:
-        config_dict (dict): A dictionary containing the new parameters to update.
-    """
-    for key, value in config_dict.items():
-        if hasattr(self, key):
-            setattr(self, key, value)
-        else:
-            raise KeyError(f"Key '{key}' not found in DynamicsConfig.")
